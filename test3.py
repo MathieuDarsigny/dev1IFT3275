@@ -85,14 +85,15 @@ def optimize_key(encoded_message,key, french_dict, combined_probabilities):
         improved = False
         # Trier les bytes en fonction des probabilités décroissantes
         sorted_symbols = sorted(combined_probabilities, key=combined_probabilities.get, reverse=True)
-    
+        #sorted_symbols2 = sorted(best_key.values() , key=best_key.values() .get, reverse=True)
         
-        assigned_symbols = list(best_key.items())
-        sorted_bytes = sorted(assigned_symbols, key=lambda item: combined_probabilities.get(item[0], 0), reverse=True)
+        bytes_char = list(best_key.values())
+        
+        sorted_bytes = sorted(bytes_char, key=lambda item: combined_probabilities.get(item[0], 0), reverse=True)
         sorted_bytes_values = [item[1] for item in sorted_bytes]
        
 
-        for symbol in sorted_symbols:
+        for symbol in bytes_char:
             
           
             if symbol in best_key:
@@ -100,12 +101,14 @@ def optimize_key(encoded_message,key, french_dict, combined_probabilities):
                 
                 continue
             # Trouver tous les caractères/paires de caractères possibles
+            
             candidates = combined_probabilities.keys()
             for candidate in candidates:
                 if candidate not in best_key:
-                    print(symbol)
+                    #print(combined_probabilities.keys())
+
                     temp_key = best_key.copy()
-                    temp_key[candidate] = best_key[symbol] 
+                    temp_key[candidate] = symbol
                     decrypted_text = decrypt_message(encoded_message, temp_key)
                     
                     current_score = eval_score(decrypted_text, french_dict)
