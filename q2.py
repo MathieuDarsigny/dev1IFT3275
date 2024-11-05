@@ -1,12 +1,70 @@
-import math
 import os
 import random as rnd
 import re
-import numpy as np
 import requests
 from collections import Counter
 import time
 
+global allow_rand
+allow_rand = True
+
+def sequence_fr_text(*urls):
+    """Télécharge et traite les textes des URLs données."""
+    corpus = ""
+    
+    # Charger et traiter chaque URL
+    for url in urls:
+        text = load_text_from_web(url)
+        
+        # Enlever les 5000 premiers et derniers caractères
+        if len(text) > 10000:
+            text = text[5000:-5000]
+        
+        # Enlever les premiers caractères jusqu'au premier mot complet, puis les derniers caractères jusqu'au dernier 
+        # mot complet, en gardant cette fois-ci l'espace
+        text = text[text.index(' ') + 1:text.rindex(' ') + 1]
+
+        # Ajouter le texte traité au corpus
+        corpus += text
+    
+    # Chiffrer le corpus combiné
+    symbols = text_to_symbols(corpus)
+    key = gen_key(symbols)
+    sequenced_text = M_vers_symboles(corpus, key)
+    
+    return sequenced_text
+
+def frequence_matrixes(dimension, fr_text, encoded_bytes):
+        """
+        Crée deux matrices de fréquences (bytes et langue française) de dimension donnée.
+        Pour dimension = 1: les matrices sont des dictionnaires simples.
+            Ex.: Pour obtenir la liste des bytes qui suivent le byte 1 on fait matrice[1]
+        Pour dimension >1, les matrices sont en réalité des dictionnaires de tuples.
+            Ex.: Pour obtenir la liste des bytes qui suivent le byte 1 et 3 on fait matrice_bytes[(1,3)]
+
+        Arguments:
+            dimension: La dimension de la matrice voulue
+            texte_fr: Un tableau d'un texte en français dont les caractères sont séquencés selon l'encodage en bytes
+            encoded_bytes: Les bytes encodés
+        """
+        matrice_bytes = {}
+        matrice_fr = {}
+        for texte, matrice in ((encoded_bytes, matrice_bytes), (fr_text, matrice_fr)):
+            for i in range(len(texte) - dimension + 1):
+                window = texte[i:i + dimension]
+                if dimension == 1:
+                    char_or_byte = window[0]
+                    if char_or_byte in matrice:
+                        matrice[char_or_byte] += 1
+                    else:
+                        matrice[char_or_byte] = 1
+                else:
+                    chars_or_bytes = tuple(window)
+                    if chars_or_bytes in matrice:
+                        matrice[chars_or_bytes] += 1
+                    else:
+                        matrice[chars_or_bytes] = 1
+        return matrice_bytes, matrice_fr
 
 
 def cut_string_into_pairs(text):
@@ -214,13 +272,20 @@ def main():
     # Combiner les deux corpus
     corpus = corpus1 + corpus2
     rnd.seed(time.time())
+    global allow_rand
+    a, b, l, c = 0, 0, 0, 0
+    M = ""
+    if allow_rand:
+        a = rnd.randint(3400, 7200)
+        b = rnd.randint(96000, 125000)
+        l = a+b
+        c = rnd.randint(0, len(corpus)-l)
+        M = corpus[c:c+l]
+    else:
+        M = corpus[5000:-5000]
+    
 
-    a = rnd.randint(3400, 7200)
-    b = rnd.randint(96000, 125000)
-    l = a+b
-    c = rnd.randint(0, len(corpus)-l)
-
-    M = corpus[c:c+l]
+    
     print("Longueur du message à décoder: ", len(M))
 
     cle_secrete = gen_key(text_to_symbols(M))
@@ -238,7 +303,7 @@ def decrypt(encoded_text, cle_secrete):
     # On utilise la clé secrète à des fins de tests
     secret_key_byte_to_char = {}
     for char, byte in cle_secrete.items():
-        secret_key_byte_to_char[int(byte,2)] = char
+        secret_key_byte_to_char[int(byte,2)] = char.replace('\r', '&').replace('\n', '@').replace('\ufeff', '<')
 
     # Stocker les mots de la langue française du fichier "liste.de.mots.francais.frgut.txt"
     with open("liste.de.mots.francais.frgut.txt", "r", encoding="utf-8") as f:
@@ -270,6 +335,11 @@ def decrypt(encoded_text, cle_secrete):
     # Séparer le texte encodé en bytes (convertis en entiers)
     encoded_bytes = [int(encoded_text[i:i + 8],2) for i in range(0, len(encoded_text), 8)]
 
+    # Écrire le message chiffré dans un fichier, où tous les bytes sont décodés et séparés par | pour faciliter la lecture
+    with open("encoded_text_full_except_5000.txt", "w", encoding="utf-8") as f:
+        for byte in encoded_bytes:
+            f.write(secret_key_byte_to_char[byte] + "|")
+
     # Obtenir les probabilités de chaque byte
     byte_probabilities = {byte: 0 for byte in set(encoded_bytes)}
     for byte in encoded_bytes:
@@ -288,9 +358,9 @@ def decrypt(encoded_text, cle_secrete):
     print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_bytes[0]] + "'")
 
     # Print les 10 autres bytes les plus probables ainsi que la clé secrète pour déboggage
-    print("10 autres bytes les plus probables: clé-dictionnaire vs clé secrète")
+    """ print("10 autres bytes les plus probables: clé-dictionnaire vs clé secrète")
     for i in range(1,11):
-        print("Char : '" + sorted_chars[i] + "' =  char '" + secret_key_byte_to_char[sorted_bytes[i]] +"'")
+        print("Char : '" + sorted_chars[i] + "' =  char '" + secret_key_byte_to_char[sorted_bytes[i]] +"'") """
 
     # ______________________________ 2. Déchiffrer le caractère ' ' ___________________________
     
@@ -309,64 +379,119 @@ def decrypt(encoded_text, cle_secrete):
         """
         return abs(real_value - observed_value) / (real_value + epsilon)
     
-    # Les bytes qui suivent "e " dans le texte
-    follows_e_space = []
+    # ------------------------- TOUS LES BYTES QUI SUIVENT 'e ' -------------------------
+
+    # Les bytes qui suivent "e " dans le texte. Ces bytes sont garantis de ne pas commencer par un espace.
+    no_starting_space = []
     prev_byte = None
     for byte in encoded_bytes:
         if key[byte] is None and prev_byte is not None and key[prev_byte] == 'e ':
-            if byte not in follows_e_space:
-                follows_e_space.append(byte)
+            if byte not in no_starting_space:
+                no_starting_space.append(byte)
         prev_byte = byte
+    
+    #print("\nVoici les bytes qui suivent 'e ' dans le texte ainsi que leurs fréquences observées vs théoriques:")
+    no_starting_space_pairs = []
+    for byte in no_starting_space:
+        no_starting_space_pairs.append((byte, byte_probabilities[byte]))
 
-    # Obtenir les probabilités des bytes qui ne suivent jamais 'e '
-    dont_follow_e_space = []
+    # Trier les pairs en ordre décroissant de probabilité
+    no_starting_space_pairs = sorted(no_starting_space_pairs, key=lambda x: x[1], reverse=True)
+    i = 0
+    for (byte, prob) in no_starting_space_pairs:
+        i+=1
+        #print(str(i) + ": '" + secret_key_byte_to_char[byte] + "' Obs: " + str(prob) + " | Théorique: " + str(char_probabilities[secret_key_byte_to_char[byte]]))
+
+    # Obtenir les probabilités des bytes qui commencent peut-être par " " en inversant no_starting_space
+    maybe_starting_space = []
     for byte in byte_probabilities:
-        if not byte in follows_e_space:
-            dont_follow_e_space.append(byte)
+        if not byte in no_starting_space:
+            maybe_starting_space.append(byte)
     
-    # Trouver le byte dont la probabilité est la plus proche de celle de ' '
-    closest_byte_to_space = None
-    closest_diff = float('inf')
-    for byte in dont_follow_e_space:
-        diff = relative_difference(real_value=char_probabilities[' '], observed_value=byte_probabilities[byte])
-        if diff < closest_diff:
-            closest_diff = diff
-            closest_byte_to_space = byte
+    #print("\nVoici les bytes qui ne suivent jamais 'e ' dans le texte ainsi que leurs fréquences observées vs théoriques:")
+    maybe_starting_space_pairs = []
+    for byte in maybe_starting_space:
+        maybe_starting_space_pairs.append((byte, byte_probabilities[byte]))
+
+    # Trier les bytes en ordre décroissant de probabilité
+    maybe_starting_space_pairs = sorted(maybe_starting_space_pairs, key=lambda x: x[1], reverse=True)
+    i = 0
+    for (byte, prob) in maybe_starting_space_pairs:
+        i+=1
+        #print(str(i) + ": '" + secret_key_byte_to_char[byte] + "' Obs: " + str(prob) + " | Théorique: " + str(char_probabilities[secret_key_byte_to_char[byte]]))
     
-    # Ajouter la substitution de ' ' à la clé
-    key[closest_byte_to_space] = ' '
-    print("Étape 2: Substitution de '" + str(closest_byte_to_space) + "' par ' '")
-    print("Validation avec clé secrète: '" + secret_key_byte_to_char[closest_byte_to_space] + "'")
 
-    # ________________ 3. Déchiffrer tous les bytes de forme 'e ' + BYTE + 'e ' _________________
-    '''
-    Maintenant qu'on connaît où sont encodés les espaces simples, on sait que s'il y a (' '|'e ') + BYTE + 'e ', c'est un mot de maximum 3 lettres qui se termine par e.
+    # ------------------------- TOUS LES BYTES QUI PRÉCÈDENT 'e ' -------------------------
+    # Les bytes qui précèdent "e " dans le texte. Ces bytes sont garantis de ne pas se terminer par un espace, car " e " n'est pas un mot.
+    no_ending_space = []
+    prev_byte = None
+    for byte in encoded_bytes:
+        if key[byte] is not None and key[byte] == 'e ' and prev_byte is not None:
+            if prev_byte not in no_ending_space:
+                no_ending_space.append(prev_byte)
+        prev_byte = byte
     
-        a) On va chercher dans la langue française tous les mots de 2 ou 3 lettres qui se terminent par e, et on enlève le 'e'. 
-            i.  On associe chaque groupe de 1 à 2 lettres formé à sa probabilité du clé-dictionnaire. 
-            ii. On prend aussi les probabilités d'apparition du mot dans la langue française.
-        b) On va chercher tous les bytes qui sont de forme (' '|'e ') + BYTE + 'e ' et leur fréquence.
-        
-        c) On trouve chacune des substitutions pour les bytes à l'aide d'une comparaison entre fréquence du groupe et fréquence du byte.
-            i. On supplémente aussi l'analyse des fréquences avec les probabilités d'apparition du mot dans la langue française pour s'assurer à 100% de faire les bonnes substitutions.
+    #print("\nVoici les bytes qui précèdent 'e ' dans le texte ainsi que leurs fréquences observées vs théoriques:")
+    no_ending_space_pairs = []
+    for byte in no_ending_space:
+        no_ending_space_pairs.append((byte, byte_probabilities[byte]))
 
-    '''
-    # a) Obtenir les mots de 2 ou 3 lettres qui se terminent par 'e' dans la langue française
-    french_words_2_3 = {word[:-1]: 0 for word in french_words if (len(word) == 3 or len(word) == 2) and word[-1] == 'e'}
+    # Trier les pairs en ordre décroissant de probabilité
+    no_ending_space_pairs = sorted(no_ending_space_pairs, key=lambda x: x[1], reverse=True)
+    i = 0
+    for (byte, prob) in no_ending_space_pairs:
+        i+=1
+        #print(str(i) + ": '" + secret_key_byte_to_char[byte] + "' Obs: " + str(prob) + " | Théorique: " + str(char_probabilities[secret_key_byte_to_char[byte]]))
 
-    # i. Associer chaque groupe de 1 à 2 lettres formé à sa probabilité du clé-dictionnaire
-    char_to_probability = {}
-    for word in french_words_2_3:
-        word_without_e = char[0:-1]
-        if word_without_e in char_probabilities:
-            char_to_probability[word_without_e] = char_probabilities[word_without_e]
-        else: 
-            char_to_probability[word_without_e] = 0
+    # Obtenir les probabilités des bytes qui ne précèdent jamais 'e '
+    maybe_ending_space = []
+    for byte in byte_probabilities:
+        if not byte in no_ending_space:
+            maybe_ending_space.append(byte)
+    
+    #print("\nVoici les bytes qui ne précèdent jamais 'e ' dans le texte ainsi que leurs fréquences observées vs théoriques:")
+    maybe_ending_space_pairs = []
+    for byte in maybe_ending_space:
+        maybe_ending_space_pairs.append((byte, byte_probabilities[byte]))
 
-    # ii. Associer chaque mot de 2 à 3 lettres à sa probabilité d'apparition dans la langue française
-    #       - L'information se trouve déjà dans word_probabilities
+    # Trier les pairs en ordre décroissant de probabilité
+    maybe_ending_space_pairs = sorted(maybe_ending_space_pairs, key=lambda x: x[1], reverse=True)
+    i = 0
+    for (byte, prob) in maybe_ending_space_pairs:
+        i+=1
+        #print(str(i) + ": '" + secret_key_byte_to_char[byte] + "' Obs: " + str(prob) + " | Théorique: " + str(char_probabilities[secret_key_byte_to_char[byte]]))
 
-    def capture_groups(start_str, n_bytes_min, n_bytes_max, end_str, decrypt_when_possible=False, bytes_with_starting_spaces=[False]*256, bytes_with_ending_spaces=[False]*256):
+    # On a:
+    #   Une liste de bytes qui ne commencent pas par des espaces
+    #   Une liste de bytes qui ne se terminent pas par des espaces
+    #   Notre objectif final est de connaître tous les bytes qui ne contiennent pas d'espaces
+
+    # On crée un set de bytes pour lesquels on est certain qu'ils ne contiennent pas d'espaces
+    e1_set = set(no_starting_space)
+    e2_set = set(no_ending_space)
+    
+    e2_sauf_e1 = (e2_set - e1_set)
+
+    bytes_no_spaces = (e1_set & e2_set)
+    """ print("Nombre de caractères sans espaces:" + str(len(bytes_no_spaces)))
+    # Imprimer tous les bytes qui ne contiennent pas d'espaces
+    print("\nVoici les bytes qui ne contiennent pas d'espaces:")
+    for byte in bytes_no_spaces:
+        print("'" + secret_key_byte_to_char[byte] + "'") """
+
+    # Trouver les bytes qui contiennent potentiellement des espaces
+    """ print("\nVoici les bytes qui contiennent potentiellement des espaces:")
+    maybe_space_bytes = []
+    i = 0
+    for byte in sorted_bytes:
+        if byte not in bytes_no_spaces:
+            maybe_space_bytes.append(byte)
+            i+=1
+            print(str(i) + ": '" + secret_key_byte_to_char[byte] + "' Obs: " + str(byte_probabilities[byte]) + " | Théorique: " + str(char_probabilities[secret_key_byte_to_char[byte]])) """
+
+    # ________________ 3. Capturer les groupes 'e ' + BYTE + 'e ' _________________
+
+    def capture_groups(start_str, n_bytes_min, n_bytes_max, end_str, decrypt_when_possible=False, bytes_with_starting_spaces=[False]*256, bytes_with_ending_spaces=[False]*256, include_start_and_end=False):
         '''
         Arguments
             - start_str: Une regex qui délimite le début des mots à capturer (ex.: '[^ ]? ' pour indiquer que la chaîne commence par n'importe quel caractère suivi d'un espace)
@@ -386,17 +511,32 @@ def decrypt(encoded_text, cle_secrete):
         Retourne
             - Une liste des mots du texte qui correspondent aux bytes à l'intérieur de start_str et end_str
         '''
-        if not (start_str[0] == ' ' or start_str[-1] == " " or end_str == ' ' or end_str[-1] == ' '):
-            raise ValueError("start_str et end_str doivent contenir au moins un espace pour séparer les mots")
 
-        # Note: On utilise le symbole '~' pour indiquer un caractère inconnu/indécrypté
+        # Note: On utilise le symbole '~' pour indiquer un caractère inconnu
         groups = []
         group = []
         capturing = False
-        for i in range(len(encoded_bytes)-1):
+        start_str_matched = ""
+        for i in range(2, len(encoded_bytes)-2):
+            debug = False
             byte = encoded_bytes[i]
             next_byte = encoded_bytes[i+1]
             char = key[byte]
+            if not capturing:
+                start_str_matched = ""
+
+            """ if (char is None and secret_key_byte_to_char[byte] != 'e ' and secret_key_byte_to_char[byte] != 'qu') and secret_key_byte_to_char[next_byte] == 'e ' and secret_key_byte_to_char[encoded_bytes[i+2]] == 'qu':
+                debug = True
+                print("\nCas now='None' + next='e ' + next2='qu'")
+            elif secret_key_byte_to_char[byte] == 'e ' and secret_key_byte_to_char[next_byte] == 'qu' and secret_key_byte_to_char[encoded_bytes[i+2]] == 'e ':
+                debug = True
+                print("\nCas now='e ' + next = 'qu' + 'e '")
+            elif secret_key_byte_to_char[encoded_bytes[i-1]] == 'e ' and secret_key_byte_to_char[byte] == 'qu' and secret_key_byte_to_char[encoded_bytes[i+1]] == 'e ':
+                debug = True
+                print("\nCas prev='e ', now='qu', next='e '")
+            elif secret_key_byte_to_char[encoded_bytes[i-2]] == 'e ' and secret_key_byte_to_char[encoded_bytes[i-1]] == 'qu' and secret_key_byte_to_char[byte] == 'e ':
+                debug = True
+                print("\nCas prev='e ' + 'qu', now='e '") """
 
             # Si char est None, vérifier bytes_with_starting_spaces ou bytes_with_ending_spaces et ajuster char
             if char is None:
@@ -411,45 +551,58 @@ def decrypt(encoded_text, cle_secrete):
                     char2 = ' ~'
                 elif bytes_with_ending_spaces[next_byte]:
                     char2 = '~ '
-            
-            # Print i, len(group), byte, next_byte, char, char2 pour déboggage
-            #print("i:", i, "len(group):", len(group),"byte:", byte,"next_byte:", next_byte,"char1", char,"char2", char2)
-
 
             if char is not None:
                 # On capture présentement le mot
                 if capturing:
+                    if debug: print("char1 != None and capturing")
                     # On trouve la fin du mot sur 1 byte
                     if re.fullmatch(string=char, pattern=end_str):
+                        if debug: print("char == end_str")
                         capturing = False
                         if len(group) >= n_bytes_min and len(group) <= n_bytes_max:
+                            if include_start_and_end:
+                                group.append(char)
+                                group = [start_str_matched] + group
                             groups.append(group)
                         group = []
                     # On trouve la fin du mot sur 2 bytes
                     elif char2 is not None and re.fullmatch(string=char + char2, pattern=end_str):
+                        if debug: print("char + char2 == end_str")
                         capturing = False
                         if len(group) >= n_bytes_min and len(group) <= n_bytes_max:
+                            if include_start_and_end:
+                                group.append(char + char2)
+                                group = [start_str_matched] + group
                             groups.append(group)
                         group = []
-                    # On n'a pas matché de fin de mot mais nous avons un espace. On arrête de capturer le mot
-                    elif char2 is not None and ' ' in char2:
+                    # On n'a pas matché de fin de mot mais on doit s'arrêter (mot trop long ou espace)
+                    elif len(group) > n_bytes_max or (char2 is not None and ' ' in char2):
+                        if debug: print("len(group) > n_bytes_max or ' ' in char2")
                         capturing = False
                         group = []
                     # On continue de capturer le mot
                     elif decrypt_when_possible:
+                        if debug: print("decrypt_when_possible")
                         group.append(char)
                     # On laisse un caractère bidon si on ne veut pas décrypter
                     else:
+                        if debug: print("not decrypt_when_possible")
                         group.append(byte)
                 # On ne capture pas présentement le mot
                 else:
+                    if debug: print("char1 != None and not capturing")
                     # On commence à capturer le mot sur 1 byte
                     if re.fullmatch(string=char, pattern=start_str):
+                        if debug: print("char == start_str")
                         capturing = True
+                        start_str_matched = char
                         group = []
                     # On commence à capturer le mot sur 2 bytes
                     elif char2 is not None and re.fullmatch(string=char + char2, pattern=start_str):
+                        if debug: print("char + char2 == start_str")
                         capturing = True
+                        start_str_matched = char + char2
                         i += 1
                         group = []
             # char est None
@@ -457,31 +610,36 @@ def decrypt(encoded_text, cle_secrete):
                 if char2 is not None:
                     # On capture présentement le mot
                     if capturing:
+                        if debug: print("char2 != None and capturing")
                         group.append(byte)
                         # On trouve la fin du mot sur le prochain byte
                         if re.fullmatch(string=char2, pattern=end_str):
+                            if debug: print("char2 == end_str")
                             capturing = False
                             if len(group) >= n_bytes_min and len(group) <= n_bytes_max:
+                                if include_start_and_end:
+                                    group.append(char2)
+                                    group = [start_str_matched] + group
                                 groups.append(group)
                             group = []
-                        # On n'a pas matché de fin de mot mais nous avons un espace. On arrête de capturer le mot
-                        elif ' ' in char2:
+                        # On n'a pas matché de fin de mot mais on doit s'arrêter (mot trop long ou espace)
+                        elif len(group) > n_bytes_max or ' ' in char2:
+                            if debug: print("len(group) > n_bytes_max or ' ' in char2")
                             capturing = False
-                            group = []
-                    # On ne capture pas présentement le mot
-                    else:
-                        # On commence à capturer le mot sur le prochain byte
-                        if re.fullmatch(string=char2, pattern=start_str):
-                            capturing = True
                             group = []
                 # char1 et char2 est None
                 else:
                     if capturing:
+                        if debug: print("chars == None and capturing")
                         if len(group) <= n_bytes_max:
                             group.append(byte)
                         else:
                             capturing = False
                             group = []
+                    else:
+                        if debug: print("chars == None and not capturing")
+            # Print i, len(group), byte, next_byte, char, char2 pour déboggage
+            if debug: print("i:", i, "group:", (group),"byte:", byte,"next_byte:", next_byte,"char1", char,"char2", char2)
         return groups
 
     """ # Test de la fonction capture_groups OK
@@ -492,63 +650,154 @@ def decrypt(encoded_text, cle_secrete):
     encoded_bytes = [1, 3, 2, 3, 1, 4, 2, 6, 7, 1, 8, 1]
     key = [None] * 256
     key[1] = 'e '
-    key[2] = ' ' 
+    key[2] = ' '
     groups = capture_groups(start_str=r'[^ ]? ', n_bytes_min=1, n_bytes_max=2, end_str=r'e ')
     """
 
     # b) Obtenir les bytes qui sont de forme (' '|'e ') + BYTE + 'e ' et leur fréquence
-    groups = capture_groups(start_str=r'[^ ]? ', n_bytes_min=1, n_bytes_max=1, end_str=r'e ')
+    groups = capture_groups(start_str=r'e ', n_bytes_min=1, n_bytes_max=1, end_str=r'e ')
 
-    print("Nombre de groupes capturés: ", len(groups))
+    """ print("Nombre de groupes capturés: ", len(groups))
     for group in groups:
         for byte in group:
-            print("Byte : '" + str(byte) + "' =  char '" + secret_key_byte_to_char[byte] +"'")
+            print("Byte : '" + str(byte) + "' =  char '" + secret_key_byte_to_char[byte] +"'") """
+    
+    # Trouver le nombre d'occurences de chaque byte dans les groupes
+    occurences_group = {}
+    for group in groups:
+        for byte in group:
+            if byte in occurences_group:
+                occurences_group[byte] += 1
+            else:
+                occurences_group[byte] = 1
+    
+    # Trier les bytes en ordre décroissant d'occurences
+    sorted_occurences_group = sorted(occurences_group, key=occurences_group.get, reverse=True)
+    
+    # Le premier byte est "qu". On ignore le reste qui est trop rare
+    # On peut donc les substituer directement
+    key[sorted_occurences_group[0]] = 'qu'
+    # Vérifier la substitution avec la clé secrète
+    print("Étape 3: Substitution de '" + str(sorted_occurences_group[0]) + "' par 'qu'")
+    print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_occurences_group[0]] + "'")
+
+    # On cherche maintenant tous les bytes qui suivent "e " + "qu" sauf ceux déjà décodés
+    bytes_after_e_qu = {}
+    for i in range(2, len(encoded_bytes)):
+        byte = encoded_bytes[i]
+        prev_prev_char = key[encoded_bytes[i-2]]
+        prev_char = key[encoded_bytes[i-1]]
+        if prev_prev_char == 'e ' and prev_char == 'qu' and key[byte] == None:
+            if byte in bytes_after_e_qu:
+                bytes_after_e_qu[byte] += 1
+            else:
+                bytes_after_e_qu[byte] = 1
+    
+    # Trier les bytes en ordre décroissant d'occurences
+    sorted_bytes_after_e_qu = sorted(bytes_after_e_qu, key=bytes_after_e_qu.get, reverse=True)
+
+    # Imprimer les premiers bytes après "e " + "qu" avec leur probabilité observée vs réelle
+    #print("\nBytes après 'e ' + 'qu':")
+    i = 0
+    for byte in sorted_bytes_after_e_qu:
+        i+=1
+        #print(str(i) + ": Freq.: " + str(bytes_after_e_qu[byte]) + " | '" + secret_key_byte_to_char[byte] + "' Obs: " + str(byte_probabilities[byte]) + " | Théorique: " + str(char_probabilities[secret_key_byte_to_char[byte]]))
+
+    # Le plus fréquent est le "i ".
+    # On peut donc le substituer directement
+    key[sorted_bytes_after_e_qu[0]] = 'i '
+    # Vérifier la substitution avec la clé secrète
+    print("Étape 3: Substitution de '" + str(sorted_bytes_after_e_qu[0]) + "' par 'i '")
+    print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_bytes_after_e_qu[0]] + "'")
+
+    groups = capture_groups(start_str=r'(e |i )', n_bytes_min=1, n_bytes_max=1, end_str=r'(e |i )', include_start_and_end=True)
+    #print("Nombre de groupes capturés: ", len(groups))
+    for group in groups:
+        group_str = ""
+        for byte in group:
+            # Vérifier si byte est une String
+            if isinstance(byte, str):
+                group_str += byte
+            else:
+                group_str += secret_key_byte_to_char[byte]
+        #print("Mot '" + group_str + "'")
+
+    '''
+
+    1- Séparer le texte encodé en groupes de 2 bytes
+    2- Compiler les fréquences des groupes de 2 bytes dans une matrice (256 x 256) où:
+        i = B1
+        j = B2
+        matrice[i,j] = nombre d'occurences de (B1 + B2)
+
+        Exemple:
+        Je vois 10 fois b1 + b2 dans le texte encodé.
+        Alors matrice[b1, b2] = 10
+
+    3- Trouver la même matrice mais pour la langue française (ex.: très très long texte), où au lieu de B1, B2 on a char1, char2
+
+    Note:
+        Dans un monde idéal:
+            Sachant B1 = char1 (ex.: on connaît déjà B1 = "e ")
+                On fait une recherche de max(matrice_encode[B1]) = B2.
+                    On ne connaît pas B2
+                On fait une recherche de max(matrice_fr[char1]) = char2.
+                    Ça nous donne char2 = "le"
+                
+                B2 = char2 = "le" car les deux matrices nous donnent le plus fréquent après un certain caractère.
+            Or, ceci est pour un monde idéal où les probabilité "match" 1 à 1. On n'est pas dans ce monde idéal.
+            Qu'est-ce qu'on pourrait faire pour approximer ce monde idéal?
+
+        
+    4- Algorithme pour trouver des substitutions fiables automatiquement:
+        i) Pour chaque byte connu B1 = char1:
+            Trouver max(matrice[B1]) et 2e_max(matrice[B1])
+                Ex.: max1 = B2
+                Ex.: max2 = B3
+            Trouver max(matrice_fr[char1]) et 2e_max(matrice_fr[char1])
+                Ex.: max_fr1 = "qu"
+                Ex.: max_fr2 = "un"
+        
+        ii) On va déterminer un seuil à partir duquel on peut dire que la substitution est fiable, donc B2 -> "qu"
+            Prenons max1, max2, max_fr1, max_fr2:
+                On accepte la substitution à partir de 20 occurences de B1
+
+                On accepte la substitution à partir d'une différence de 2x entre max1 et max2
+                max1 > 2*max2 et max_fr1 >= 2*max_fr2
+
+        iii) Si on fait une substitution, on recommence au point i)
             
-    # c) On trouve chacune des substitutions pour les bytes à l'aide d'une comparaison entre fréquence du groupe et fréquence du byte.
-    #        i. On supplémente aussi l'analyse des fréquences avec les probabilités d'apparition du mot dans la langue française pour s'assurer à 100% de faire les bonnes substitutions.
-    
-    # Calculer les fréquences de chaque groupe dans groups
+    5- Quand on sort de la boucle...?
+        - Si on connaît plusieurs substitutions avec espaces:
+            ex.: 'x '
+                Regarder les bytes après 'x ' dans le texte encodé.
+                Chaque byte après 'x ' ne commence pas par un espace.
+            On peut donc avoir un ensemble 'no_starting_space'
 
-    # Bug: On ne peut pas utiliser Counter(groups) car les listes ne sont pas hashables
-    group_counts = Counter(groups)
-    total_groups = sum(group_counts.values())
-    group_probabilities = {group: count / total_groups for group, count in group_counts.items()}
+            inversement:
+            ex.: ' x'
+                Regarder les bytes avant ' x' dans le texte encodé.
+                Chaque byte avant ' x' ne termine pas par un espace.
+            On peut donc avoir un ensemble 'no_ending_space'
 
-
-    # Obtenir un sous-ensemble de word_probabilities qui contient uniquement les mots de french_words_2_3
-    word_probabilities_2_3 = {word: prob for word, prob in word_probabilities.items() if word in french_words_2_3}
-
-    # Normaliser les probabilités des mots de 2 à 3 lettres
-    total_words_2_3 = sum(word_probabilities_2_3.values())
-    word_probabilities_2_3 = {word: prob / total_words_2_3 for word, prob in word_probabilities_2_3.items()}
-    
-    # Pour chaque byte de groups, trouver les 1 à 2 caractères qui correspond le mieux en comparant 2 métriques à la fois:
-    for byte, group_prob in group_probabilities:
-        best_char = None
-        best_diff = float('inf')
-        # Chaque char est un mot de 2 à 3 lettres qui se termine par 'e'
-        for char in char_to_probability:
-            # Fréquence du byte dans le texte encodé vs fréquence des caractères dans le clé-dictionnaire
-            diff = relative_difference(real_value=char_to_probability[char], observed_value=byte_probabilities[byte])
-            # Fréquence du groupe vs fréquence normalisée du mot de 2 à 3 lettres dans la langue française
-            diff2 = relative_difference(real_value=word_probabilities_2_3[char+"e"], observed_value=group_prob)
-
-            # Moyenne des deux différences
-            avg_diff = (diff + diff2)/2
-            if avg_diff < best_diff:
-                best_diff = avg_diff
-                best_char = char
-        
-        # Ajouter la substitution à la clé
-        key[byte] = best_char
-        print("Étape 3: Substitution de '" + byte + "' par '" + best_char + "' pour former le mot de 2 à 3 lettres '" + best_char + "e'")
-        
+            Si on connaît assez de 'x ' et ' x', on peut obtenir:
+                no_starting space ∩ no_ending_space = bytes_no_spaces
+            On peut donc obtenir un ensemble de bytes *sans* espaces.
 
 
-    # Écrire le fichier décodé
+        - Augmenter la dimension de la matrice et recommencer? (B1 -> B2) -> (B1 + B2 -> B3)   
+    '''
+
+    # ---------------------- 4. Substitution automatique des bytes ----------------------
+    # Exemple pour obtenir la matrice de dimension 1:
+    fr_text = sequence_fr_text("https://www.gutenberg.org/cache/epub/68355/pg68355.txt", "https://www.gutenberg.org/cache/epub/42131/pg42131.txt")
+    (matrice_bytes, matrice_fr) = frequence_matrixes(dimension=1, fr_text=fr_text, encoded_bytes=encoded_bytes)
+
+
+    """ # Écrire le fichier décodé
     decoded_text = decode(encoded_bytes, key)
     with open("decoded_text.txt", "w", encoding="utf-8") as f:
-        f.write(decoded_text)
+        f.write(decoded_text) """
 
     return
 
@@ -558,4 +807,5 @@ def decrypt(encoded_text, cle_secrete):
 
 
 if __name__ == '__main__':
+
     main()
