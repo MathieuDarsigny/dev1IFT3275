@@ -8,6 +8,27 @@ import time
 global allow_rand
 allow_rand = True
 
+def encode_with_sequential_bytes(sequenced_text):
+    '''
+    Encodage du texte séquencé en bytes.
+    Transforme chacun des caractères en bytes séquentiels.
+    Retourne l'encodage en bytes et le dictionnaire de correspondance.
+    '''
+    byte_encode = 0
+    chars_encoded = {}
+    sequenced_bytes_text = []
+    for i in range(len(sequenced_text)):
+        char = sequenced_text[i]
+        if char not in chars_encoded:
+            chars_encoded[char] = byte_encode
+            byte_encode += 1
+        sequenced_bytes_text.append(chars_encoded[char])
+    
+    # Inverser le dictionnaire chars_encoded pour obtenir byte -> char
+    byte_to_char = {v: k for k, v in chars_encoded.items()}
+
+    return sequenced_bytes_text, byte_to_char, chars_encoded
+
 def sequence_fr_text(*urls):
     """Télécharge et traite les textes des URLs données."""
     corpus = ""
@@ -31,8 +52,10 @@ def sequence_fr_text(*urls):
     symbols = text_to_symbols(corpus)
     key = gen_key(symbols)
     sequenced_text = M_vers_symboles(corpus, key)
+
+    sequenced_text, bytes_to_char, char_to_byte = encode_with_sequential_bytes(sequenced_text)
     
-    return sequenced_text
+    return sequenced_text, bytes_to_char, char_to_byte
 
 def frequence_matrixes(dimension, fr_text, encoded_bytes):
         """
@@ -50,20 +73,23 @@ def frequence_matrixes(dimension, fr_text, encoded_bytes):
         matrice_bytes = {}
         matrice_fr = {}
         for texte, matrice in ((encoded_bytes, matrice_bytes), (fr_text, matrice_fr)):
-            for i in range(len(texte) - dimension + 1):
+            for i in range(len(texte) - dimension):
                 window = texte[i:i + dimension]
+                next_char_or_byte = texte[i + dimension]
                 if dimension == 1:
                     char_or_byte = window[0]
                     if char_or_byte in matrice:
-                        matrice[char_or_byte] += 1
+                        matrice[char_or_byte][next_char_or_byte] += 1
                     else:
-                        matrice[char_or_byte] = 1
+                        matrice[char_or_byte] = [0 for _ in range(256)]
+                        matrice[char_or_byte][next_char_or_byte] += 1
                 else:
                     chars_or_bytes = tuple(window)
                     if chars_or_bytes in matrice:
-                        matrice[chars_or_bytes] += 1
+                        matrice[chars_or_bytes][next_char_or_byte] += 1
                     else:
-                        matrice[chars_or_bytes] = 1
+                        matrice[chars_or_bytes] = [0 for _ in range(256)]
+                        matrice[char_or_byte][next_char_or_byte] += 1
         return matrice_bytes, matrice_fr
 
 
@@ -722,9 +748,13 @@ def decrypt(encoded_text, cle_secrete):
                 group_str += secret_key_byte_to_char[byte]
         #print("Mot '" + group_str + "'")
 
-    '''
+    # ---------------------- 4. Substitution automatique des bytes ----------------------
+    # 1- Encoder un texte en français qui servira de données théoriques pour les fréquences des caractères.
+    # fr_text: Texte en français encodé en bytes
+    # fr_dict: Dictionnaire de conversion bytes -> char pour le texte en français
+    fr_text, fr_byte_to_char, fr_char_to_byte = sequence_fr_text("https://www.gutenberg.org/ebooks/13846.txt.utf-8", "https://www.gutenberg.org/ebooks/4650.txt.utf-8")
 
-    1- Séparer le texte encodé en groupes de 2 bytes
+    '''
     2- Compiler les fréquences des groupes de 2 bytes dans une matrice (256 x 256) où:
         i = B1
         j = B2
@@ -734,21 +764,11 @@ def decrypt(encoded_text, cle_secrete):
         Je vois 10 fois b1 + b2 dans le texte encodé.
         Alors matrice[b1, b2] = 10
 
-    3- Trouver la même matrice mais pour la langue française (ex.: très très long texte), où au lieu de B1, B2 on a char1, char2
+    3- Compiler la même chose pour la langue française où matrice_fr[char1, char2] = nombre d'occurences de (char1 + char2)
+    '''
+    matrice_bytes, matrice_fr = frequence_matrixes(dimension=1, fr_text=fr_text, encoded_bytes=encoded_bytes)
 
-    Note:
-        Dans un monde idéal:
-            Sachant B1 = char1 (ex.: on connaît déjà B1 = "e ")
-                On fait une recherche de max(matrice_encode[B1]) = B2.
-                    On ne connaît pas B2
-                On fait une recherche de max(matrice_fr[char1]) = char2.
-                    Ça nous donne char2 = "le"
-                
-                B2 = char2 = "le" car les deux matrices nous donnent le plus fréquent après un certain caractère.
-            Or, ceci est pour un monde idéal où les probabilité "match" 1 à 1. On n'est pas dans ce monde idéal.
-            Qu'est-ce qu'on pourrait faire pour approximer ce monde idéal?
-
-        
+    '''
     4- Algorithme pour trouver des substitutions fiables automatiquement:
         i) Pour chaque byte connu B1 = char1:
             Trouver max(matrice[B1]) et 2e_max(matrice[B1])
@@ -766,7 +786,50 @@ def decrypt(encoded_text, cle_secrete):
                 max1 > 2*max2 et max_fr1 >= 2*max_fr2
 
         iii) Si on fait une substitution, on recommence au point i)
-            
+    '''
+
+    # Fonction pour obtenir le max et le 2e max d'une liste ainsi que leurs valeurs
+    def max_2(lst):
+        max1 = max(lst)
+        max1_index = lst.index(max1)
+        # Temporairement mettre le max à 0 pour trouver le 2e max
+        lst[max1_index] = 0
+        max2 = max(lst)
+        # Remettre le max à sa valeur originale
+        lst[max1_index] = max1
+        return max1_index, lst.index(max2), max1, max2
+    
+
+    bytes_connus = [byte for byte in range(256) if key[byte] is not None]
+    new_substitution = True
+    while new_substitution:
+        new_substitution = False
+        for byte in bytes_connus:
+            char = key[byte]
+
+            # Bug: Il faut que la fonction max_2 ne tienne pas compte des bytes déjà décodés, sinon on entre en boucle infinie.
+            # À corriger SVP.
+            max1_ind, max2_ind, max1_val, max2_val = max_2(matrice_bytes[byte])
+
+            # Bug: Il faut que la fonction max_2 ne tienne pas compte des bytes déjà décodés, sinon on entre en boucle infinie.
+            # À corriger SVP.
+            max1_fr_ind, max2_fr_ind, max1_fr_val, max2_fr_val = max_2(matrice_fr[fr_char_to_byte[char]])
+
+            # Note: J'ai baissé le seuil à 1.5 pour les tests. Un seuil à 2 ne trouvait aucune substitution
+            if max1_val >= 20 and max1_val > 1.5*max2_val and max1_fr_val >= 1.5*max2_fr_val:
+                key[max1_ind] = fr_byte_to_char[max1_fr_ind]
+                bytes_connus.append(max1_ind)
+                print("Substitution de '" + str(max1_ind) + "' par '" + fr_byte_to_char[max1_fr_ind] + "'")
+                print("Validation avec la clé secrète: '" + secret_key_byte_to_char[max1_ind] + "'")
+                
+                # On recommence la boucle
+                new_substitution = True
+                break
+            else:
+                print("Pas de substitution pour '" + char + "'")
+    
+
+    '''
     5- Quand on sort de la boucle...?
         - Si on connaît plusieurs substitutions avec espaces:
             ex.: 'x '
@@ -787,11 +850,6 @@ def decrypt(encoded_text, cle_secrete):
 
         - Augmenter la dimension de la matrice et recommencer? (B1 -> B2) -> (B1 + B2 -> B3)   
     '''
-
-    # ---------------------- 4. Substitution automatique des bytes ----------------------
-    # Exemple pour obtenir la matrice de dimension 1:
-    fr_text = sequence_fr_text("https://www.gutenberg.org/cache/epub/68355/pg68355.txt", "https://www.gutenberg.org/cache/epub/42131/pg42131.txt")
-    (matrice_bytes, matrice_fr) = frequence_matrixes(dimension=1, fr_text=fr_text, encoded_bytes=encoded_bytes)
 
 
     """ # Écrire le fichier décodé
