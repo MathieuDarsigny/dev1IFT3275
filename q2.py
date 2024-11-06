@@ -789,38 +789,70 @@ def decrypt(encoded_text, cle_secrete):
     '''
 
     # Fonction pour obtenir le max et le 2e max d'une liste ainsi que leurs valeurs
-    def max_2(lst):
-        max1 = max(lst)
-        max1_index = lst.index(max1)
-        # Temporairement mettre le max à 0 pour trouver le 2e max
-        lst[max1_index] = 0
-        max2 = max(lst)
-        # Remettre le max à sa valeur originale
-        lst[max1_index] = max1
-        return max1_index, lst.index(max2), max1, max2
+    def max_2_ignore(lst, ignore_indices):
+        max1, max2 = -1, -1
+        max1_index, max2_index = -1, -1
+        
+        ignore_len = len(ignore_indices)
+        ignore_idx = 0
+        
+        for i, value in enumerate(lst):
+            # Ignorer l'indice s'il est dans ignore_indices
+            if ignore_idx < ignore_len and i == ignore_indices[ignore_idx]:
+                ignore_idx += 1
+                continue
+            
+            # Trouver la première valeur maximale
+            if value > max1:
+                max2 = max1
+                max2_index = max1_index
+                max1 = value
+                max1_index = i
+            # Trouver la deuxième valeur maximale
+            elif value > max2:
+                max2 = value
+                max2_index = i
+        
+        return max1, max2, max1_index, max2_index
     
 
     bytes_connus = [byte for byte in range(256) if key[byte] is not None]
+    bytes_connus_autre_encodage = []
+    for i in range(len(key)):
+        if key[i] is not None:
+            bytes_connus_autre_encodage.append(fr_char_to_byte[key[i]])
     new_substitution = True
     while new_substitution:
         new_substitution = False
         for byte in bytes_connus:
             char = key[byte]
 
-            # Bug: Il faut que la fonction max_2 ne tienne pas compte des bytes déjà décodés, sinon on entre en boucle infinie.
-            # À corriger SVP.
-            max1_ind, max2_ind, max1_val, max2_val = max_2(matrice_bytes[byte])
+            # La fonction 'max' doit ignorer les bytes déjà connus pour éviter de les substituer à nouveau
+            max1, max2, max1_index, _ = max_2_ignore(matrice_bytes[byte], bytes_connus)
+            max1_fr, max2_fr, max1_fr_index, _ = max_2_ignore(matrice_fr[fr_char_to_byte[char]], bytes_connus_autre_encodage)
 
-            # Bug: Il faut que la fonction max_2 ne tienne pas compte des bytes déjà décodés, sinon on entre en boucle infinie.
-            # À corriger SVP.
-            max1_fr_ind, max2_fr_ind, max1_fr_val, max2_fr_val = max_2(matrice_fr[fr_char_to_byte[char]])
-
-            # Note: J'ai baissé le seuil à 1.5 pour les tests. Un seuil à 2 ne trouvait aucune substitution
-            if max1_val >= 20 and max1_val > 1.5*max2_val and max1_fr_val >= 1.5*max2_fr_val:
-                key[max1_ind] = fr_byte_to_char[max1_fr_ind]
-                bytes_connus.append(max1_ind)
-                print("Substitution de '" + str(max1_ind) + "' par '" + fr_byte_to_char[max1_fr_ind] + "'")
-                print("Validation avec la clé secrète: '" + secret_key_byte_to_char[max1_ind] + "'")
+            # Note: J'ai baissé le seuil à 1.3 et 1.2 pour les tests. Un seuil à 2 ne trouvait aucune substitution
+            # Maintenant, l'algo trouve trop de substitutions, et souvent intervertit les substitutions.
+            #   Peut-être faire un algo probabiliste d'une certaine profondeur pour trouver les bonnes substitutions?
+            #   Ex.: Si le programme trouve 2 substitutions autant probables, puis le reste beaucoup moins probable:
+            #       - Il choisit la première substitution:
+            #           - Il continue son algorithme jusqu'à une certaine profondeur
+            #           - Une fois la recherche en profondeur terminée, il teste l'ensemble des substitutions des feuilles
+            #                   - Par exemple, en groupant les caractères connus consécutifs dans le texte et voir si certains groupes ne font pas de sens
+            #           - Chaque noeud choisit la meilleure substitution de ses enfants
+            #       - Il remonte les choix jusqu'à la racine
+            #       - Il choisit la deuxième substitution:
+            #           - ...
+            #       - Il remonte les choix jusqu'à la racine
+            #       - Il prend le meilleur score parmi les 2 choix
+            if max1 >= 8 and max1 > 1.3*max2 and max1_fr >= 1.2*max2_fr:
+                key[max1_index] = fr_byte_to_char[max1_fr_index]
+                bytes_connus.append(max1_index)
+                bytes_connus = sorted(bytes_connus)
+                bytes_connus_autre_encodage.append(max1_fr_index)
+                bytes_connus_autre_encodage = sorted(bytes_connus_autre_encodage)
+                print("Substitution de '" + str(max1_index) + "' par '" + fr_byte_to_char[max1_fr_index] + "'")
+                print("Validation avec la clé secrète: '" + secret_key_byte_to_char[max1_index] + "'")
                 
                 # On recommence la boucle
                 new_substitution = True
@@ -852,12 +884,23 @@ def decrypt(encoded_text, cle_secrete):
     '''
 
 
+
+
     """ # Écrire le fichier décodé
     decoded_text = decode(encoded_bytes, key)
     with open("decoded_text.txt", "w", encoding="utf-8") as f:
         f.write(decoded_text) """
 
     return
+
+
+
+
+
+
+if __name__ == '__main__':
+
+    main()
 
 
 
