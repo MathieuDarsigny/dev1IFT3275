@@ -1,3 +1,4 @@
+import bisect
 import os
 import random as rnd
 import re
@@ -812,6 +813,8 @@ def decrypt(encoded_text, cle_secrete):
             elif value > max2:
                 max2 = value
                 max2_index = i
+        if ignore_indices[0] == 4 and ignore_indices[1] == 66 and ignore_indices[2] == 124:
+            print("max1: ", max1, "max2: ", max2, "max1_index: ", max1_index, "max2_index: ", max2_index)
         
         return max1, max2, max1_index, max2_index
     
@@ -820,7 +823,10 @@ def decrypt(encoded_text, cle_secrete):
     bytes_connus_autre_encodage = []
     for i in range(len(key)):
         if key[i] is not None:
+            print("Byte: '" + str(i) + "' de la clé = '" + key[i] + "' = byte '" + str(fr_char_to_byte[key[i]]) + "' de l'autre encodage = " + fr_byte_to_char[fr_char_to_byte[key[i]]])
             bytes_connus_autre_encodage.append(fr_char_to_byte[key[i]])
+    bytes_connus = sorted(bytes_connus)
+    bytes_connus_autre_encodage = sorted(bytes_connus_autre_encodage)
     new_substitution = True
     while new_substitution:
         new_substitution = False
@@ -847,10 +853,8 @@ def decrypt(encoded_text, cle_secrete):
             #       - Il prend le meilleur score parmi les 2 choix
             if max1 >= 8 and max1 > 1.3*max2 and max1_fr >= 1.2*max2_fr:
                 key[max1_index] = fr_byte_to_char[max1_fr_index]
-                bytes_connus.append(max1_index)
-                bytes_connus = sorted(bytes_connus)
-                bytes_connus_autre_encodage.append(max1_fr_index)
-                bytes_connus_autre_encodage = sorted(bytes_connus_autre_encodage)
+                bisect.insort(bytes_connus, max1_index)
+                bisect.insort(bytes_connus_autre_encodage, max1_fr_index)
                 print("Substitution de '" + str(max1_index) + "' par '" + fr_byte_to_char[max1_fr_index] + "'")
                 print("Validation avec la clé secrète: '" + secret_key_byte_to_char[max1_index] + "'")
                 
@@ -892,15 +896,6 @@ def decrypt(encoded_text, cle_secrete):
         f.write(decoded_text) """
 
     return
-
-
-
-
-
-
-if __name__ == '__main__':
-
-    main()
 
 
 
