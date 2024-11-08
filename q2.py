@@ -1487,11 +1487,10 @@ def decrypt(encoded_text, cle_secrete):
     #       Cependant elle ne choisit pas la substitution, elle fait seulement rejeter d'autres substitutions incorrectes.
     #       On va modifier la fonction pour qu'elle puisse choisir la substitution si elle est certaine. Je te laisse réfléchir à comment l'implémenter.
     # 2- Une fois l'itération avec les seuils terminée (parce qu'elle n'a pas trouvé de substitution à une certaine itération)
-    #       - On itère sur les mots formés dans notre texte.
-    #           - On commencerait par des mots de 2 bytes, puis 3, etc.
+    #       - On itère sur les mots formés dans notre texte, en commençant par les mots les plus longs possibles (disons 8 bytes).
     #       - Si le mot n'est pas dans la langue française, on regarde si l'ajout ou la modification d'un byte peut former un mot français.
     #       - Si oui, modifier le byte et vérifier si le texte est plus lisible.
-    #       - Voir le google doc, on avait déjà parlé de ça.
+    #       - Voir les fonctions de substitution déjà implémentées à la toute fin du fichier.
 
 
 
