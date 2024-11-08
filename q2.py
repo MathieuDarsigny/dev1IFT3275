@@ -10,6 +10,178 @@ import time
 global allow_rand
 allow_rand = True
 
+global possible_chars_in_word
+possible_chars_in_word = ['b', 'j', 'J', 'Â', 'É', 'ê', 't', 'Y', 'N', 'B', 'V', 'Ê',
+                '’', 'i', 's', 'C', 'â', 'ï', 'W', 'y', 'p', 'D', 'A', 'n', 'q',
+                'e', 'T', 'È', 'U', 'v', 'l', 'P', 'X', 'Z', 'À', 'ç', 'u', 'î', 'L', 'k', 'E', 'R',
+                'é', 'O', 'Î', 'a', 'F', 'H', 'c', "'", 'è', 'I', 'S', 'x', 'à', 'g', 'Q', 'w', 'û', 'G', 'm', 'K', 'z', 'o', 'ù', 'r',
+                'M', 'Ç', 'h', 'f', 'ë', 'd', 'ô', 'es',
+                'en', 'qu', 're', 'de', 'le', 'nt', 'on', 'ou', 'ue',
+                'an', 'te', 'ai', 'se', 'it', 'me', 'is', 'oi', 'er', 'ce', 'ne', 'et', 'in', 'ns',
+                'ur', 'eu', 'co', 'tr', 'la', 'ar', 'ie', 'ui', 'us', 'ut', 'il', 'pa', 'au',
+                'el', 'ti', 'st', 'un', 'em', 'ra', 'e,', 'so', 'or', 'll', 'nd', 'si', 'ir', 
+                'ss', 'po', 'ro', 'ri', 'pr', 's,', 'ma', 'di', 'vo', 'pe', 'to', 'ch',
+                've', 'nc', 'om', 'je', 'no', 'rt', 'lu', "'e", 'mo', 'ta', 'as', 'at', 'io', 'sa',
+                "u'", 'av', 'os', "l'", "'a", 'rs', 'pl', 'ho', 'té', 'ét', 'fa', 'da', 'li',
+                'su', 'ée', 'ré', 'dé', 'ec', 'nn', 'mm', "'i", 'ca', 'uv', 'id', 'ni', 'bl']
+
+global fr_dict
+fr_dict = set()
+
+def capture_groups(start_str, n_bytes_min, n_bytes_max, end_str, encoded_bytes, key, decrypt_when_possible=False,
+                       bytes_with_starting_spaces=[False] * 256, bytes_with_ending_spaces=[False] * 256,
+                       include_start_and_end=False):
+        '''
+        Arguments
+            - start_str: Une regex qui délimite le début des mots à capturer (ex.: '[^ ]? ' pour indiquer que la chaîne commence par n'importe quel caractère suivi d'un espace)
+                start_str doit toujours comporter un espace
+            - n_bytes_min: longueur minimale de la chaîne du milieu en bytes
+            - n_bytes_max: longueur maximale de la chaîne du milieu en bytes
+            - end_str: Une regex qui délimite la fin des mots à capturer (ex.: ' [^ ]?' pour indiquer que la chaîne se termine par un espace suivi de n'importe quel caractère)
+                end_str doit toujours comporter un espace
+            - decrypt_when_possible: Si vrai, les bytes déjà substitués sont transformés en leur représentation en string dans les groupes. Faux par défaut
+            - bytes_with_starting_spaces: Optionnel. Liste de Booléens qui indique si le byte i commence par un espace.
+                Si le byte i commence par un espace, on segmente le groupe en conséquence
+                Note: ' ' ne doit pas être True
+            - bytes_with_ending_spaces: Optionnel. Liste de Booléens qui indique si le byte i se termine par un espace.
+                Si le byte i se termine par un espace, on segmente le groupe en conséquence
+                Note: ' ' ne doit pas être True
+
+        Retourne
+            - Une liste des mots du texte qui correspondent aux bytes à l'intérieur de start_str et end_str
+        '''
+
+        # Note: On utilise le symbole '~' pour indiquer un caractère inconnu
+        groups = []
+        group = []
+        capturing = False
+        start_str_matched = ""
+        for i in range(2, len(encoded_bytes) - 2):
+            debug = False
+            byte = encoded_bytes[i]
+            next_byte = encoded_bytes[i + 1]
+            char = key[byte]
+            if not capturing:
+                start_str_matched = ""
+
+            """ if (char is None and secret_key_byte_to_char[byte] != 'e ' and secret_key_byte_to_char[byte] != 'qu') and secret_key_byte_to_char[next_byte] == 'e ' and secret_key_byte_to_char[encoded_bytes[i+2]] == 'qu':
+                debug = True
+                print("\nCas now='None' + next='e ' + next2='qu'")
+            elif secret_key_byte_to_char[byte] == 'e ' and secret_key_byte_to_char[next_byte] == 'qu' and secret_key_byte_to_char[encoded_bytes[i+2]] == 'e ':
+                debug = True
+                print("\nCas now='e ' + next = 'qu' + 'e '")
+            elif secret_key_byte_to_char[encoded_bytes[i-1]] == 'e ' and secret_key_byte_to_char[byte] == 'qu' and secret_key_byte_to_char[encoded_bytes[i+1]] == 'e ':
+                debug = True
+                print("\nCas prev='e ', now='qu', next='e '")
+            elif secret_key_byte_to_char[encoded_bytes[i-2]] == 'e ' and secret_key_byte_to_char[encoded_bytes[i-1]] == 'qu' and secret_key_byte_to_char[byte] == 'e ':
+                debug = True
+                print("\nCas prev='e ' + 'qu', now='e '") """
+
+            # Si char est None, vérifier bytes_with_starting_spaces ou bytes_with_ending_spaces et ajuster char
+            if char is None:
+                if bytes_with_starting_spaces[byte]:
+                    char = ' ~'
+                elif bytes_with_ending_spaces[byte]:
+                    char = '~ '
+            char2 = key[next_byte]
+            # Si char2 est None, vérifier bytes_with_starting_spaces ou bytes_with_ending_spaces et ajuster char2
+            if char2 is None:
+                if bytes_with_starting_spaces[next_byte]:
+                    char2 = ' ~'
+                elif bytes_with_ending_spaces[next_byte]:
+                    char2 = '~ '
+
+            if char is not None:
+                # On capture présentement le mot
+                if capturing:
+                    if debug: print("char1 != None and capturing")
+                    # On trouve la fin du mot sur 1 byte
+                    if re.fullmatch(string=char, pattern=end_str):
+                        if debug: print("char == end_str")
+                        capturing = False
+                        if len(group) >= n_bytes_min and len(group) <= n_bytes_max:
+                            if include_start_and_end:
+                                group.append(char)
+                                group = [start_str_matched] + group
+                            groups.append(group)
+                        group = []
+                    # On trouve la fin du mot sur 2 bytes
+                    elif char2 is not None and re.fullmatch(string=char + char2, pattern=end_str):
+                        if debug: print("char + char2 == end_str")
+                        capturing = False
+                        if len(group) >= n_bytes_min and len(group) <= n_bytes_max:
+                            if include_start_and_end:
+                                group.append(char + char2)
+                                group = [start_str_matched] + group
+                            groups.append(group)
+                        group = []
+                    # On n'a pas matché de fin de mot mais on doit s'arrêter (mot trop long ou espace)
+                    elif len(group) > n_bytes_max or (char2 is not None and ' ' in char2):
+                        if debug: print("len(group) > n_bytes_max or ' ' in char2")
+                        capturing = False
+                        group = []
+                    # On continue de capturer le mot
+                    elif decrypt_when_possible:
+                        if debug: print("decrypt_when_possible")
+                        group.append(char)
+                    # On laisse un caractère bidon si on ne veut pas décrypter
+                    else:
+                        if debug: print("not decrypt_when_possible")
+                        group.append(byte)
+                # On ne capture pas présentement le mot
+                else:
+                    if debug: print("char1 != None and not capturing")
+                    # On commence à capturer le mot sur 1 byte
+                    if re.fullmatch(string=char, pattern=start_str):
+                        if debug: print("char == start_str")
+                        capturing = True
+                        start_str_matched = char
+                        group = []
+                    # On commence à capturer le mot sur 2 bytes
+                    elif char2 is not None and re.fullmatch(string=char + char2, pattern=start_str):
+                        if debug: print("char + char2 == start_str")
+                        capturing = True
+                        start_str_matched = char + char2
+                        i += 1
+                        group = []
+            # char est None
+            else:
+                if char2 is not None:
+                    # On capture présentement le mot
+                    if capturing:
+                        if debug: print("char2 != None and capturing")
+                        group.append(byte)
+                        # On trouve la fin du mot sur le prochain byte
+                        if re.fullmatch(string=char2, pattern=end_str):
+                            if debug: print("char2 == end_str")
+                            capturing = False
+                            if len(group) >= n_bytes_min and len(group) <= n_bytes_max:
+                                if include_start_and_end:
+                                    group.append(char2)
+                                    group = [start_str_matched] + group
+                                groups.append(group)
+                            group = []
+                        # On n'a pas matché de fin de mot mais on doit s'arrêter (mot trop long ou espace)
+                        elif len(group) > n_bytes_max or ' ' in char2:
+                            if debug: print("len(group) > n_bytes_max or ' ' in char2")
+                            capturing = False
+                            group = []
+                # char1 et char2 est None
+                else:
+                    if capturing:
+                        if debug: print("chars == None and capturing")
+                        if len(group) <= n_bytes_max:
+                            group.append(byte)
+                        else:
+                            capturing = False
+                            group = []
+                    else:
+                        if debug: print("chars == None and not capturing")
+            # Print i, len(group), byte, next_byte, char, char2 pour déboggage
+            if debug: print("i:", i, "group:", (group), "byte:", byte, "next_byte:", next_byte, "char1", char, "char2",
+                            char2)
+        return groups
+
 def verif_key(key, secret_key):
     '''
     Fonction de débug pour vérifier si la clé générée est correcte.
@@ -97,56 +269,94 @@ def max_2_ignore(lst, ignore_set):
 
     return max1, max2, max1_index, max2_index
 
-def frequence_matrixes_combinations(dimension, encoded_bytes):
-    # -------------------------- IMPORTANT ---------------------------
-    # Amélioration de cette fonction:
-    #   L'ordre utilisé lors de l'itération sur cette matrice plus tard est important.
-    #   Il est possible de réduire l'incertitude des substitutions effectuées en ordonnant les combinaisons par ordre de fréquence
-    #   En python, l'ordre d'itération sur un dictionnaire est l'ordre d'insertion des éléments.
-    #   Il faut donc calculer les fréquences de chaque combinaison en premier et les ordonner par fréquence décroissante.
-    #   Ensuite, on doit les insérer dans la matrice de fréquences dans cet ordre.
+def frequence_matrixes_combinations(dimension, encoded_bytes, add_indexes=False):
     """
     Crée une matrice de fréquences de bytes de dimension donnée.
     Problème:
         Étant donné N bytes fixes, déterminer la fréquence d'apparition de chaque byte formant un N+1-uplet avec ces N bytes dans le texte.
         Stocker les fréquences dans une matrice où chaque ligne représente un N-uplet et chaque colonne représente un byte.
+            Modif: La colonne qui représente un byte est modifiée pour être un tuple. 
+                À l'indexe 0 on a le byte, et à l'indexe 1 on a un tableau des indexes de toutes les occurences du groupe de bytes dans le texte
 
     Arguments:
         dimension: La dimension de la matrice voulue (nombre de bytes fixes dans les tuples)
         encoded_bytes: Le texte encodé sous forme de tableau de bytes
+        byte_probabilities: Dictionnaire des probabilités pour chaque byte.
+            Utilisé pour conserver l'ordre décroissant de probabilités des bytes pour l'insertion dans la matrice
+
 
     Retourne:
         La matrice de fréquences des bytes
     """
-    matrice = {}
-    for i in range(len(encoded_bytes) - dimension):
-        if dimension == 1:
-            if encoded_bytes[i+1] in matrice:
-                matrice[encoded_bytes[i+1]][encoded_bytes[i]] += 1
-            else:
-                matrice[encoded_bytes[i+1]] = [0 for _ in range(256)]
-                matrice[encoded_bytes[i+1]][encoded_bytes[i]] += 1
-            if encoded_bytes[i] in matrice:
-                matrice[encoded_bytes[i]][encoded_bytes[i + 1]] += 1
-            else:
-                matrice[encoded_bytes[i]] = [0 for _ in range(256)]
-                matrice[encoded_bytes[i]][encoded_bytes[i + 1]] += 1
-        else:
-            window = encoded_bytes[i:i + dimension + 1]
-            
-            for j in range(len(window)):
-                current_byte = window[j]
-                other_bytes = window[:j] + window[j + 1:]
-                other_bytes = sorted(other_bytes)
-                other_bytes = tuple(other_bytes)
-                
-                if other_bytes in matrice:
-                    matrice[other_bytes][current_byte] += 1
+    if add_indexes:
+        matrice = {}
+        for i in range(len(encoded_bytes) - dimension):
+            if dimension == 1:
+                if encoded_bytes[i+1] in matrice:
+                    liste_freq_bytes, indexes = matrice[encoded_bytes[i+1]]
+                    liste_freq_bytes[encoded_bytes[i]] += 1
+                    indexes.append(i)
                 else:
-                    matrice[other_bytes] = [0 for _ in range(256)]
-                    matrice[other_bytes][current_byte] += 1
+                    liste_freq_bytes = [0 for _ in range(256)]
+                    liste_freq_bytes[encoded_bytes[i]] += 1
+                    indexes = [i]
+                    matrice[encoded_bytes[i+1]] = (liste_freq_bytes, indexes)
+                if encoded_bytes[i] in matrice:
+                    liste_freq_bytes, indexes = matrice[encoded_bytes[i]]
+                    liste_freq_bytes[encoded_bytes[i+1]] += 1
+                    indexes.append(i)
+                else:
+                    liste_freq_bytes = [0 for _ in range(256)]
+                    liste_freq_bytes[encoded_bytes[i+1]] += 1
+                    indexes = [i]
+                    matrice[encoded_bytes[i+1]] = (liste_freq_bytes, indexes)
+            else:
+                window = encoded_bytes[i:i + dimension + 1]
+                
+                for j in range(len(window)):
+                    current_byte = window[j]
+                    other_bytes = window[:j] + window[j + 1:]
+                    other_bytes = sorted(other_bytes)
+                    other_bytes = tuple(other_bytes)
+                    
+                    if other_bytes in matrice:
+                        liste_freq_bytes, indexes = matrice[other_bytes]
+                        liste_freq_bytes[current_byte] += 1
+                        indexes.append(i)
+                    else:
+                        liste_freq_bytes = [0 for _ in range(256)]
+                        liste_freq_bytes[current_byte] += 1
+                        indexes = [i]
+                        matrice[other_bytes] = (liste_freq_bytes, indexes)
+    else:
+        matrice = {}
+        for i in range(len(encoded_bytes) - dimension):
+            if dimension == 1:
+                if encoded_bytes[i+1] in matrice:
+                    matrice[encoded_bytes[i+1]][encoded_bytes[i]] += 1
+                else:
+                    matrice[encoded_bytes[i+1]] = [0 for _ in range(256)]
+                    matrice[encoded_bytes[i+1]][encoded_bytes[i]] += 1
+                if encoded_bytes[i] in matrice:
+                    matrice[encoded_bytes[i]][encoded_bytes[i + 1]] += 1
+                else:
+                    matrice[encoded_bytes[i]] = [0 for _ in range(256)]
+                    matrice[encoded_bytes[i]][encoded_bytes[i + 1]] += 1
+            else:
+                window = encoded_bytes[i:i + dimension + 1]
+                
+                for j in range(len(window)):
+                    current_byte = window[j]
+                    other_bytes = window[:j] + window[j + 1:]
+                    other_bytes = sorted(other_bytes)
+                    other_bytes = tuple(other_bytes)
+                    
+                    if other_bytes in matrice:
+                        matrice[other_bytes][current_byte] += 1
+                    else:
+                        matrice[other_bytes] = [0 for _ in range(256)]
+                        matrice[other_bytes][current_byte] += 1
     return matrice
-
 
 def frequence_matrixes(dimension, fr_text, encoded_bytes):
     """
@@ -181,6 +391,7 @@ def frequence_matrixes(dimension, fr_text, encoded_bytes):
                 else:
                     matrice[chars_or_bytes] = [0 for _ in range(256)]
                     matrice[chars_or_bytes][next_char_or_byte] += 1
+
     return matrice_bytes, matrice_fr
 
 
@@ -278,10 +489,6 @@ def gen_key(symboles):
 
 
 def text_to_symbols(text):
-    '''caracteres = list(set(list(text)))
-    nb_caracteres = len(caracteres)
-    nb_bicaracteres = 256-nb_caracteres
-    bicaracteres = [item for item, _ in Counter(cut_string_into_pairs(text)).most_common(nb_bicaracteres)]'''
     symboles = ['b', 'j', '\r', 'J', '”', ')', 'Â', 'É', 'ê', '5', 't', '9', 'Y', '%', 'N', 'B', 'V', '\ufeff', 'Ê',
                 '?', '’', 'i', ':', 's', 'C', 'â', 'ï', 'W', 'y', 'p', 'D', '—', '«', 'º', 'A', '3', 'n', '0', 'q', '4',
                 'e', 'T', 'È', '$', 'U', 'v', '»', 'l', 'P', 'X', 'Z', 'À', 'ç', 'u', '…', 'î', 'L', 'k', 'E', 'R', '2',
@@ -438,7 +645,7 @@ def main():
         c = rnd.randint(0, len(corpus) - l)
         M = corpus[c:c + l]
     else:
-        M = corpus[5000:-5000]
+        M = corpus[10000:270000]
 
     #print("Longueur du message à décoder: ", len(M))
 
@@ -508,160 +715,7 @@ def decrypt(encoded_text, cle_secrete):
     sorted_bytes = sorted(byte_probabilities, key=byte_probabilities.get, reverse=True)
 
     # ------------------------------ DÉCODAGE--------------------------------------------------
-    def capture_groups(start_str, n_bytes_min, n_bytes_max, end_str, decrypt_when_possible=False,
-                       bytes_with_starting_spaces=[False] * 256, bytes_with_ending_spaces=[False] * 256,
-                       include_start_and_end=False):
-        '''
-        Arguments
-            - start_str: Une regex qui délimite le début des mots à capturer (ex.: '[^ ]? ' pour indiquer que la chaîne commence par n'importe quel caractère suivi d'un espace)
-                start_str doit toujours comporter un espace
-            - n_bytes_min: longueur minimale de la chaîne du milieu en bytes
-            - n_bytes_max: longueur maximale de la chaîne du milieu en bytes
-            - end_str: Une regex qui délimite la fin des mots à capturer (ex.: ' [^ ]?' pour indiquer que la chaîne se termine par un espace suivi de n'importe quel caractère)
-                end_str doit toujours comporter un espace
-            - decrypt_when_possible: Si vrai, les bytes déjà substitués sont transformés en leur représentation en string dans les groupes. Faux par défaut
-            - bytes_with_starting_spaces: Optionnel. Liste de Booléens qui indique si le byte i commence par un espace.
-                Si le byte i commence par un espace, on segmente le groupe en conséquence
-                Note: ' ' ne doit pas être True
-            - bytes_with_ending_spaces: Optionnel. Liste de Booléens qui indique si le byte i se termine par un espace.
-                Si le byte i se termine par un espace, on segmente le groupe en conséquence
-                Note: ' ' ne doit pas être True
-
-        Retourne
-            - Une liste des mots du texte qui correspondent aux bytes à l'intérieur de start_str et end_str
-        '''
-
-        # Note: On utilise le symbole '~' pour indiquer un caractère inconnu
-        groups = []
-        group = []
-        capturing = False
-        start_str_matched = ""
-        for i in range(2, len(encoded_bytes) - 2):
-            debug = False
-            byte = encoded_bytes[i]
-            next_byte = encoded_bytes[i + 1]
-            char = key[byte]
-            if not capturing:
-                start_str_matched = ""
-
-            """ if (char is None and secret_key_byte_to_char[byte] != 'e ' and secret_key_byte_to_char[byte] != 'qu') and secret_key_byte_to_char[next_byte] == 'e ' and secret_key_byte_to_char[encoded_bytes[i+2]] == 'qu':
-                debug = True
-                print("\nCas now='None' + next='e ' + next2='qu'")
-            elif secret_key_byte_to_char[byte] == 'e ' and secret_key_byte_to_char[next_byte] == 'qu' and secret_key_byte_to_char[encoded_bytes[i+2]] == 'e ':
-                debug = True
-                print("\nCas now='e ' + next = 'qu' + 'e '")
-            elif secret_key_byte_to_char[encoded_bytes[i-1]] == 'e ' and secret_key_byte_to_char[byte] == 'qu' and secret_key_byte_to_char[encoded_bytes[i+1]] == 'e ':
-                debug = True
-                print("\nCas prev='e ', now='qu', next='e '")
-            elif secret_key_byte_to_char[encoded_bytes[i-2]] == 'e ' and secret_key_byte_to_char[encoded_bytes[i-1]] == 'qu' and secret_key_byte_to_char[byte] == 'e ':
-                debug = True
-                print("\nCas prev='e ' + 'qu', now='e '") """
-
-            # Si char est None, vérifier bytes_with_starting_spaces ou bytes_with_ending_spaces et ajuster char
-            if char is None:
-                if bytes_with_starting_spaces[byte]:
-                    char = ' ~'
-                elif bytes_with_ending_spaces[byte]:
-                    char = '~ '
-            char2 = key[next_byte]
-            # Si char2 est None, vérifier bytes_with_starting_spaces ou bytes_with_ending_spaces et ajuster char2
-            if char2 is None:
-                if bytes_with_starting_spaces[next_byte]:
-                    char2 = ' ~'
-                elif bytes_with_ending_spaces[next_byte]:
-                    char2 = '~ '
-
-            if char is not None:
-                # On capture présentement le mot
-                if capturing:
-                    if debug: print("char1 != None and capturing")
-                    # On trouve la fin du mot sur 1 byte
-                    if re.fullmatch(string=char, pattern=end_str):
-                        if debug: print("char == end_str")
-                        capturing = False
-                        if len(group) >= n_bytes_min and len(group) <= n_bytes_max:
-                            if include_start_and_end:
-                                group.append(char)
-                                group = [start_str_matched] + group
-                            groups.append(group)
-                        group = []
-                    # On trouve la fin du mot sur 2 bytes
-                    elif char2 is not None and re.fullmatch(string=char + char2, pattern=end_str):
-                        if debug: print("char + char2 == end_str")
-                        capturing = False
-                        if len(group) >= n_bytes_min and len(group) <= n_bytes_max:
-                            if include_start_and_end:
-                                group.append(char + char2)
-                                group = [start_str_matched] + group
-                            groups.append(group)
-                        group = []
-                    # On n'a pas matché de fin de mot mais on doit s'arrêter (mot trop long ou espace)
-                    elif len(group) > n_bytes_max or (char2 is not None and ' ' in char2):
-                        if debug: print("len(group) > n_bytes_max or ' ' in char2")
-                        capturing = False
-                        group = []
-                    # On continue de capturer le mot
-                    elif decrypt_when_possible:
-                        if debug: print("decrypt_when_possible")
-                        group.append(char)
-                    # On laisse un caractère bidon si on ne veut pas décrypter
-                    else:
-                        if debug: print("not decrypt_when_possible")
-                        group.append(byte)
-                # On ne capture pas présentement le mot
-                else:
-                    if debug: print("char1 != None and not capturing")
-                    # On commence à capturer le mot sur 1 byte
-                    if re.fullmatch(string=char, pattern=start_str):
-                        if debug: print("char == start_str")
-                        capturing = True
-                        start_str_matched = char
-                        group = []
-                    # On commence à capturer le mot sur 2 bytes
-                    elif char2 is not None and re.fullmatch(string=char + char2, pattern=start_str):
-                        if debug: print("char + char2 == start_str")
-                        capturing = True
-                        start_str_matched = char + char2
-                        i += 1
-                        group = []
-            # char est None
-            else:
-                if char2 is not None:
-                    # On capture présentement le mot
-                    if capturing:
-                        if debug: print("char2 != None and capturing")
-                        group.append(byte)
-                        # On trouve la fin du mot sur le prochain byte
-                        if re.fullmatch(string=char2, pattern=end_str):
-                            if debug: print("char2 == end_str")
-                            capturing = False
-                            if len(group) >= n_bytes_min and len(group) <= n_bytes_max:
-                                if include_start_and_end:
-                                    group.append(char2)
-                                    group = [start_str_matched] + group
-                                groups.append(group)
-                            group = []
-                        # On n'a pas matché de fin de mot mais on doit s'arrêter (mot trop long ou espace)
-                        elif len(group) > n_bytes_max or ' ' in char2:
-                            if debug: print("len(group) > n_bytes_max or ' ' in char2")
-                            capturing = False
-                            group = []
-                # char1 et char2 est None
-                else:
-                    if capturing:
-                        if debug: print("chars == None and capturing")
-                        if len(group) <= n_bytes_max:
-                            group.append(byte)
-                        else:
-                            capturing = False
-                            group = []
-                    else:
-                        if debug: print("chars == None and not capturing")
-            # Print i, len(group), byte, next_byte, char, char2 pour déboggage
-            if debug: print("i:", i, "group:", (group), "byte:", byte, "next_byte:", next_byte, "char1", char, "char2",
-                            char2)
-        return groups
-
+    global key
     key = [None] * 256
     # ______________ 1. Trouver la substitution "e " et "s " ___________
 
@@ -731,8 +785,8 @@ def decrypt(encoded_text, cle_secrete):
     # On forme des groupes de mots de forme "e " + BYTE + "e " et des groupes de "s " + BYTE + "s "
     # L'objectif est que les groupes de forme "e " + BYTE + "e " ont moins de BYTE possibles
     # et que les groupes de forme "s " + BYTE + "s " ont beaucoup de BYTE possibles
-    groups_e = capture_groups(start_str='e ', n_bytes_min=1, n_bytes_max=1, end_str='e ')
-    groups_s = capture_groups(start_str='s ', n_bytes_min=1, n_bytes_max=1, end_str='s ')
+    groups_e = capture_groups(start_str='e ', n_bytes_min=1, n_bytes_max=1, end_str='e ', encoded_bytes=encoded_bytes, key=key)
+    groups_s = capture_groups(start_str='s ', n_bytes_min=1, n_bytes_max=1, end_str='s ', encoded_bytes=encoded_bytes, key=key)
 
     # On vérifie que la taille des groupes est >= 5:
     # Si non, ça veut dire que le groupe associé est en réalité "\r\n",
@@ -751,8 +805,8 @@ def decrypt(encoded_text, cle_secrete):
         key[sorted_bytes[s_index]] = 's '
         #print("Étape 1: Substitution de '" + str(sorted_bytes[0]) + "' par '&@', Obs = " + str(byte_probabilities[sorted_bytes[0]]) + " | Théorique = " + str(char_probabilities['&@']))
         #print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_bytes[1]] + "'")
-        groups_e = capture_groups(start_str='e ', n_bytes_min=1, n_bytes_max=1, end_str='e ')
-        groups_s = capture_groups(start_str='s ', n_bytes_min=1, n_bytes_max=1, end_str='s ')
+        groups_e = capture_groups(start_str='e ', n_bytes_min=1, n_bytes_max=1, end_str='e ', encoded_bytes=encoded_bytes, key=key)
+        groups_s = capture_groups(start_str='s ', n_bytes_min=1, n_bytes_max=1, end_str='s ', encoded_bytes=encoded_bytes, key=key)
     elif len(groups_s) < 5:
         # Le \n\r est le 2e caractère le plus fréquent de notre texte.
         key[sorted_bytes[e_index]] = 'e '
@@ -763,8 +817,8 @@ def decrypt(encoded_text, cle_secrete):
         key[sorted_bytes[s_index]] = 's '
         #print("Étape 1: Substitution de '" + str(sorted_bytes[1]) + "' par '&@', Obs = " + str(byte_probabilities[sorted_bytes[1]]) + " | Théorique = " + str(char_probabilities['&@']))
         #print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_bytes[1]] + "'")
-        groups_e = capture_groups(start_str='e ', n_bytes_min=1, n_bytes_max=1, end_str='e ')
-        groups_s = capture_groups(start_str='s ', n_bytes_min=1, n_bytes_max=1, end_str='s ')
+        groups_e = capture_groups(start_str='e ', n_bytes_min=1, n_bytes_max=1, end_str='e ', encoded_bytes=encoded_bytes, key=key)
+        groups_s = capture_groups(start_str='s ', n_bytes_min=1, n_bytes_max=1, end_str='s ', encoded_bytes=encoded_bytes, key=key)
     
     # Maintenant qu'on a traité le cas particulier où "\r\n" est premier ou 2e, on peut continuer en discernant "e " et "s "
     # On calcule les fréquences de chaque byte dans les groupes de "e "
@@ -933,7 +987,7 @@ def decrypt(encoded_text, cle_secrete):
     """
 
     # b) Obtenir les bytes qui sont de forme (' '|'e ') + BYTE + 'e ' et leur fréquence
-    groups = capture_groups(start_str=r'e ', n_bytes_min=1, n_bytes_max=1, end_str=r'e ')
+    groups = capture_groups(start_str=r'e ', n_bytes_min=1, n_bytes_max=1, end_str=r'e ', encoded_bytes=encoded_bytes, key=key)
 
     """ print("Nombre de groupes capturés: ", len(groups))
     for group in groups:
@@ -983,7 +1037,7 @@ def decrypt(encoded_text, cle_secrete):
 
 
     groups = capture_groups(start_str=r'(e |i )', n_bytes_min=1, n_bytes_max=1, end_str=r'(e |i )',
-                            include_start_and_end=True)
+                            include_start_and_end=True, encoded_bytes=encoded_bytes, key=key)
     # print("Nombre de groupes capturés: ", len(groups))
     for group in groups:
         group_str = ""
@@ -1000,7 +1054,6 @@ def decrypt(encoded_text, cle_secrete):
     # ---------------------- 4. Substitution automatique des bytes ----------------------
     # 1- Encoder un texte en français qui servira de données théoriques pour les fréquences des caractères.
     # fr_text: Texte en français encodé en bytes
-    # fr_dict: Dictionnaire de conversion bytes -> char pour le texte en français
     fr_text, fr_byte_to_char, fr_char_to_byte = sequence_fr_text("https://www.gutenberg.org/ebooks/13846.txt.utf-8",
                                                                  "https://www.gutenberg.org/ebooks/4650.txt.utf-8",
                                                                  "https://www.gutenberg.org/cache/epub/35064/pg35064.txt",
@@ -1050,7 +1103,7 @@ def decrypt(encoded_text, cle_secrete):
     bytes_connus_autre_encodage = sorted(bytes_connus_autre_encodage)
 
     # Fonction pour performer les substitutions
-    def perform_substitution(matrice_bytes, matrice_fr, dimension, min_freq, ratio_threshold_bytes, ratio_threshold_fr, char_probabilities, byte_probabilities):
+    def perform_substitution(matrice_bytes, matrice_fr, dimension, min_freq, ratio_threshold_bytes, ratio_threshold_fr, char_probabilities, byte_probabilities, excluded_substitutions, exclude_substitutions, encoded_bytes):
 
         for (context, freqs_bytes) in matrice_bytes.items():
             # Vérifie si le contexte consiste en des bytes connus
@@ -1085,6 +1138,10 @@ def decrypt(encoded_text, cle_secrete):
             max1, max2, max1_index, max2_index = max_2_ignore(freqs_bytes_ignore, bytes_connus)
             max1_fr, max2_fr, max1_fr_index, max2_fr_index = max_2_ignore(freqs_fr_ignore, bytes_connus_autre_encodage)
 
+            # On a déjà exclu cette substitution
+            if excluded_substitutions[max1_index][max1_fr_index]:
+                continue
+
             # Obtenir les probabilités des 2 bytes les plus fréquents
             max1_prob = byte_probabilities.get(max1_index)
             max2_prob = byte_probabilities.get(max2_index)
@@ -1114,13 +1171,22 @@ def decrypt(encoded_text, cle_secrete):
                 if key[max1_index] is None and fr_byte_to_char[max1_fr_index] not in key:
                     # Bloquer la substitution si c'est le cas
                     if not respects_order:
-                        #print("Substitution bloquée: " + secret_key_byte_to_char[max1] + " ou " + secret_key_byte_to_char[max2] + " -> " + fr_byte_to_char[max1_fr_index] + " ou " + fr_byte_to_char[max2_fr_index])
+                        #print("Substitution bloquée: " + secret_key_byte_to_char[max1_index] + " ou " + secret_key_byte_to_char[max2_index] + " -> " + fr_byte_to_char[max1_fr_index] + " ou " + fr_byte_to_char[max2_fr_index])
                         continue
+
+                    # On fait une dernière vérification (très coûteuse) pour savoir si cette substitution est fiable.
+                    if exclude_substitutions and not verify_substitution_in_text(max1_index, fr_byte_to_char[max1_fr_index], key, encoded_bytes):
+                        print("Substitution bloquée: " + secret_key_byte_to_char[max1_index] + " -> " + fr_byte_to_char[max1_fr_index])
+                        excluded_substitutions[max1_index][max1_fr_index] = True
+                        continue
+
+
+
                     key[max1_index] = fr_byte_to_char[max1_fr_index]
                     bisect.insort(bytes_connus, max1_index)
                     bisect.insort(bytes_connus_autre_encodage, max1_fr_index)
                     # Append ce texte à un fichier "decoding.txt" pour vérification
-                    with open("decoding.txt", "a") as f:
+                    with open("decoding.txt", "a", encoding="utf-8") as f:
                         f.write(f"'{fr_byte_to_char[max1_fr_index]}' = '{secret_key_byte_to_char[max1_index]}' with dimension '{str(dimension)}'\n")
                         f.write(f"min_freq={min_freq}, ratio_threshold_bytes={ratio_threshold_bytes}, ratio_threshold_fr={ratio_threshold_fr}\n")
                     return
@@ -1129,85 +1195,136 @@ def decrypt(encoded_text, cle_secrete):
     # ------------------------------------------- ATTENTION --------------------------------------------------
     # À ceux qui seront assez braves pour toucher à ce code, sachez que la fonction perform_substitution est très sensible
     # L'auxiliaire me dit que la taille des textes de test sont sujet à changement, il faudra peut-être modifier ces paramètres pour être
-    #   en fonction de la taille du message encodé. Cette fonction reste quand même une approximation.
+    #   en fonction de la taille du message encodé.
 
-    # En commentaire: Paramètres utilisés pour frequency_matrixes
-    """ # Seuils minimaux et initiaux
-    initial_min_freq = 8
-    initial_ratio_threshold_bytes = 1.8
-    initial_ratio_threshold_fr = 1.8
+    # ------------------ PARAMÈTRES POUR LES SÉQUENCES --------------------------
+    initial_min_freq_seq = 15
+    initial_ratio_threshold_bytes_seq = 1.7
+    initial_ratio_threshold_fr_seq = 1.7
 
-    min_min_freq = 1
-    min_ratio_threshold_bytes = 0.5
-    min_ratio_threshold_fr = 0.5
+    min_min_freq_seq = 8
+    min_ratio_threshold_bytes_seq = 1.3
+    min_ratio_threshold_fr_seq = 1.3
 
     # Décrémenter les seuils
-    min_freq_decrement = 0.5
-    ratio_threshold_decrement = 0.05
+    min_freq_decrement_seq = 1
+    ratio_threshold_decrement_seq = 0.1
 
-    freq_decrement_per_dimension = 1
-    ratio_decrement_per_dimension = 0.1
-
-    # Nombre minimum de bytes connus désirés
-    desired_minimum_known_bytes = 200
-
-    # Après ce nombre de substitutions, on se limite aux dimensions 1-2 pour réduire le temps de calcul
-    swap_dimensions_threshold = 150
+    freq_decrement_per_dimension_seq = 0
+    ratio_decrement_per_dimension_seq = 0
 
     # Dimensions des n-grammes à considérer
-    dimensions = [1, 2, 3, 4] """
+    dimensions_seq = [5, 4, 3, 2]
 
-    # Les paramètres utilisés pour frequency_matrixes_combinations
-    initial_min_freq = 20
-    initial_ratio_threshold_bytes = 1.9
-    initial_ratio_threshold_fr = 1.9
+    matrices_bytes_seq = [None for _ in range(max(dimensions_seq))]
+    matrices_fr_seq = [None for _ in range(max(dimensions_seq))]
+    for dimension in dimensions_seq:
+        matrices_bytes_seq[dimension-1], matrices_fr_seq[dimension-1] = frequence_matrixes(dimension=dimension, fr_text=fr_text, encoded_bytes=encoded_bytes)
 
-    min_min_freq = 12
-    min_ratio_threshold_bytes = 1.35
-    min_ratio_threshold_fr = 1.35
+
+    # --------------- PARAMÈTRES POUR LES COMBINAISONS ------------------------
+    initial_min_freq_comb = 20
+    initial_ratio_threshold_bytes_comb = 1.9
+    initial_ratio_threshold_fr_comb = 1.9
+
+    min_min_freq_comb = 12
+    min_ratio_threshold_bytes_comb = 1.35
+    min_ratio_threshold_fr_comb = 1.35
 
 
     # Décrémenter les seuils
-    min_freq_decrement = 1
-    ratio_threshold_decrement = 0.1
+    min_freq_decrement_comb = 1
+    ratio_threshold_decrement_comb = 0.1
 
-    freq_decrement_per_dimension = 1
-    ratio_decrement_per_dimension = 0.1
+    freq_decrement_per_dimension_comb = 1
+    ratio_decrement_per_dimension_comb = 0.1
 
+    # Dimensions des n-grammes à considérer
+    dimensions_comb = [1, 2]
+
+    matrices_fr_comb = [None for _ in range(len(dimensions_comb))]
+    matrices_bytes_comb = [None for _ in range(len(dimensions_comb))]
+    for dimension in dimensions_comb:
+        matrices_bytes_comb[dimension-1] = frequence_matrixes_combinations(dimension=dimension, encoded_bytes=encoded_bytes)
+        matrices_fr_comb[dimension-1] = frequence_matrixes_combinations(dimension=dimension, encoded_bytes=fr_text)
+
+
+    # --------------------- PARAMÈTRES GÉNÉRAUX -------------------------------
     # Nombre minimum de bytes connus désirés
     desired_minimum_known_bytes = len(byte_probabilities)
 
-    # Après ce nombre de substitutions, on se limite aux dimensions 1-2 pour réduire le temps de calcul
-    swap_dimensions_threshold = 150
+    # Après combien de substitutions de combinaisons on passe aux fréquences, et vice-versa
+    # On veut diminuer le nombre de substitutions consécutives par la même approche pour éviter le plus possible les erreurs
+    no_of_substitutions_comb = [desired_minimum_known_bytes]
+    no_of_substitutions_seq = [5]
+    swap_thresholds = []
+    cumul = 0
+    for i in range(len(no_of_substitutions_comb)):
+        cumul += no_of_substitutions_comb[i]
+        swap_thresholds.append(cumul)
+        cumul += no_of_substitutions_seq[i]
+        swap_thresholds.append(cumul)
+    while cumul < desired_minimum_known_bytes + 1:
+        cumul += no_of_substitutions_comb[-1]
+        swap_thresholds.append(cumul)
+        cumul += no_of_substitutions_seq[-1]
+        swap_thresholds.append(cumul)
 
-    # Dimensions des n-grammes à considérer
-    dimensions = [1, 2, 3]
 
-    # Initialiser les seuils
-    current_min_freq = initial_min_freq
-    current_ratio_threshold_bytes = initial_ratio_threshold_bytes
-    current_ratio_threshold_fr = initial_ratio_threshold_fr
+    swap_threshold_current_index = 0
 
-    matrices_fr = [frequence_matrixes_combinations(dimension=1, encoded_bytes=fr_text),
-                   frequence_matrixes_combinations(dimension=2, encoded_bytes=fr_text),
-                   frequence_matrixes_combinations(dimension=3, encoded_bytes=fr_text)]
-                   #frequence_matrixes_combinations(dimension=4, encoded_bytes=fr_text)]
+
     
-    matrices_bytes = [frequence_matrixes_combinations(dimension=1, encoded_bytes=encoded_bytes),
-                        frequence_matrixes_combinations(dimension=2, encoded_bytes=encoded_bytes),
-                        frequence_matrixes_combinations(dimension=3, encoded_bytes=encoded_bytes)]
-                        #frequence_matrixes_combinations(dimension=4, encoded_bytes=encoded_bytes)]
+    # --------------------- PRÉPARATION DE LA PREMIÈRE ITÉRATION --------------------------
+    initial_min_freq = initial_min_freq_comb
+    initial_ratio_threshold_bytes = initial_ratio_threshold_bytes_comb
+    initial_ratio_threshold_fr = initial_ratio_threshold_fr_comb
     
-    # Code pour l'utilisation de frequence_matrixes au lieu de frequence_matrixes_combinations
-    """ matrices_bytes = [None for _ in range(len(dimensions))]
-    matrices_fr = [None for _ in range(len(dimensions))]
-    for i in range(len(dimensions)):
-        matrices_bytes[i], matrices_fr[i] = frequence_matrixes(dimension=i+1, encoded_bytes=encoded_bytes, fr_text=fr_text) """
+    current_min_freq = initial_min_freq_comb
+    current_ratio_threshold_bytes = initial_ratio_threshold_bytes_comb
+    current_ratio_threshold_fr = initial_ratio_threshold_fr_comb
+
+    min_min_freq = min_min_freq_comb
+    min_ratio_threshold_bytes = min_ratio_threshold_bytes_comb
+    min_ratio_threshold_fr = min_ratio_threshold_fr_comb
+
+    min_freq_decrement = min_freq_decrement_comb
+    ratio_threshold_decrement = ratio_threshold_decrement_comb
+
+    freq_decrement_per_dimension = freq_decrement_per_dimension_comb
+    ratio_decrement_per_dimension = ratio_decrement_per_dimension_comb
+
+    dimensions = dimensions_comb
+
+    matrices_bytes = matrices_bytes_comb
+    matrices_fr = matrices_fr_comb
+
+    nombre_bytes_connus_initial = len(bytes_connus)
+
+    excluded_substitutions = [[False for _ in range(256)] for _ in range(256)]
+    # À partir de combien de substitutions on fait la longue vérification de si la substitution est fiable
+    exclude_substitutions_at = 10
+    exclude_substitutions = False
+
+    global possible_chars_in_word
+    possible_chars_in_word = set(possible_chars_in_word)
+
+    # Ouvrir le dictionnaire de la langue française "word_probabilities_cleansed.txt".
+    global fr_dict
+    fr_dict = set()
+    with open("word_probabilities_cleansed.txt", "r", encoding="utf-8") as f:
+        for word in f:
+            fr_dict.add(word.strip())
+            if word[-1].isalpha():
+                # On considère qu'un mot peut se terminer par un point ou une virgule
+                fr_dict.add(word + ",")
+                fr_dict.add(word + ".")
 
     # Clear le fichier "decoding.txt"
-    with open("decoding.txt", "w") as f:
-        f.write("")
+    with open("decoding.txt", "w", encoding="utf-8") as f:
+        f.write("------------- COMBINAISONS --------------\n")
 
+    # -------------------- ITÉRATION DES SUBSTITUTIONS --------------------------
     while (
             current_min_freq >= min_min_freq
             and current_ratio_threshold_bytes >= min_ratio_threshold_bytes
@@ -1252,9 +1369,16 @@ def decrypt(encoded_text, cle_secrete):
                                     adjusted_ratio_threshold_bytes,
                                     adjusted_ratio_threshold_fr,
                                     char_probabilities,
-                                    byte_probabilities
+                                    byte_probabilities,
+                                    excluded_substitutions,
+                                    exclude_substitutions,
+                                    encoded_bytes
                                 )
                 substitutions_after = len(bytes_connus)
+                if len(bytes_connus) - nombre_bytes_connus_initial >= exclude_substitutions_at:
+                    exclude_substitutions = True
+                if substitutions_after - nombre_bytes_connus_initial >= swap_thresholds[swap_threshold_current_index]:
+                    break
 
                 if substitutions_after > substitutions_before:
                     substitutions_made = True
@@ -1272,49 +1396,102 @@ def decrypt(encoded_text, cle_secrete):
             if current_min_freq == min_min_freq and current_ratio_threshold_bytes == min_ratio_threshold_bytes and current_ratio_threshold_fr == min_ratio_threshold_fr:
                 print("Seuils minimaux atteints, mais nombre de symboles connus insuffisant.")
                 break
-            if len(bytes_connus) == swap_dimensions_threshold:
-                dimensions = [2, 1] # Après un certain temps, on commence à avoir trop de substitutions et le temps d'exécution explose: on se limite à 2-grams et 1-grams
-            # Ajuster les seuils globaux
-            current_min_freq = max(current_min_freq - min_freq_decrement, min_min_freq)
-            current_ratio_threshold_bytes = max(
-                current_ratio_threshold_bytes - ratio_threshold_decrement, min_ratio_threshold_bytes
-            )
-            current_ratio_threshold_fr = max(
-                current_ratio_threshold_fr - ratio_threshold_decrement, min_ratio_threshold_fr
-            )
-            print(
-                f"Ajustement des seuils globaux: min_freq={current_min_freq}, "
-                f"ratio_threshold_bytes={current_ratio_threshold_bytes}, "
-                f"ratio_threshold_fr={current_ratio_threshold_fr}"
-            )
 
-    # Idées à explorer:
-    # 0- frequence_matrixes_combinations:
-    #       Lire le commentaire sous la fonction et appliquer les changements expliqués.
-    #       À mon avis c'est la façon la plus rapide de faire du progrès pour l'accuracy.
-    # 1- Diviser pour régner (je suis pas certain que ce soit une bonne idée parce que chaque texte deviendrait trop petit, mais je note quand même):
-    #       - Avant notre substitution automatique, on pourrait diviser le texte en 2 parties et trouver les substitutions sur la première moitié
-    #       - On trouverait ensuite les substitutions pour la 2e moitié
-    #       - Comparer les substitutions des 2 moitiés et si c'est la même chose, on les confirme. Sinon, on les enlève.
-    #       - Désavantages:
-    #           - Texte trop petit, augmente la variance des probabilités
-    #           - Notre temps d'exécution ne dépend pas de la taille du texte d'entrée, mais plutôt du nombre de substitutions à faire.
-    #               - Si on divise le texte en 2, on double le nombre de substitutions à faire.
-    #
-    # 2- Cross-validation des caractères avec espaces:
-    #       - Itérer par groupe de 2 bytes sur le texte encodé
-    #       - Vérifier qu'il n'existe de paire de bytes avec espaces dans le texte (ex.: "e " + "s ")
-    #               (Attention, "e " + "a " peut être un mot)
-    #       - Ça nous permettrait de vérifier facilement si les substitutions avec espaces sont fiables
-    #
-    # 3- Une fois les substitutions avec espaces cross-validées:
-    #       - Pour les substitutions manquantes, on itère sur les mots formés dans notre texte.
+            # On arrête d'utiliser des combinaisons. Pour garder plus de précision, on passe aux séquences de bytes.
+            if len(bytes_connus) - nombre_bytes_connus_initial >= swap_thresholds[swap_threshold_current_index]:
+                if swap_threshold_current_index % 2 == 0:
+                    if (swap_threshold_current_index//2)<len(no_of_substitutions_comb): 
+                        print("Nombre de symboles connus par combinaisons a atteint le seuil de " + str(no_of_substitutions_comb[swap_threshold_current_index//2]) + ".")
+                    with open("decoding.txt", "a", encoding="utf-8") as f:
+                        f.write("----------------- SÉQUENCES -----------------\n")
+                    # On passe aux séquences
+                    initial_min_freq = initial_min_freq_seq
+                    initial_ratio_threshold_bytes = initial_ratio_threshold_bytes_seq
+                    initial_ratio_threshold_fr = initial_ratio_threshold_fr_seq
+
+                    current_min_freq = initial_min_freq_seq
+                    current_ratio_threshold_bytes = initial_ratio_threshold_bytes_seq
+                    current_ratio_threshold_fr = initial_ratio_threshold_fr_seq
+
+                    min_min_freq = min_min_freq_seq
+                    min_ratio_threshold_bytes = min_ratio_threshold_bytes_seq
+                    min_ratio_threshold_fr = min_ratio_threshold_fr_seq
+
+                    # Décrémenter les seuils
+                    min_freq_decrement = min_freq_decrement_seq
+                    ratio_threshold_decrement = ratio_threshold_decrement_seq
+
+                    freq_decrement_per_dimension = freq_decrement_per_dimension_seq
+                    ratio_decrement_per_dimension = ratio_decrement_per_dimension_seq
+
+                    # Dimensions des n-grammes à considérer
+                    dimensions = dimensions_seq
+
+                    # Utilisation de frequence_matrixes au lieu de frequence_matrixes_combinations
+                    matrices_bytes = matrices_bytes_seq
+                    matrices_fr = matrices_fr_seq
+
+                    swap_threshold_current_index += 1
+                else:
+                    if (swap_threshold_current_index//2)<len(no_of_substitutions_seq):
+                        print("Nombre de symboles connus par fréquences a atteint le seuil de " + str(no_of_substitutions_comb[swap_threshold_current_index//2]) + ".")
+                    with open("decoding.txt", "a", encoding="utf-8") as f:
+                        f.write("--------------- COMBINAISONS ----------------\n")
+                    # On passe aux combinaisons
+                    initial_min_freq = initial_min_freq_comb
+                    initial_ratio_threshold_bytes = initial_ratio_threshold_bytes_comb
+                    initial_ratio_threshold_fr = initial_ratio_threshold_fr_comb
+
+                    current_min_freq = initial_min_freq_comb
+                    current_ratio_threshold_fr = initial_ratio_threshold_fr_comb
+                    current_ratio_threshold_bytes = initial_ratio_threshold_bytes_comb
+
+                    min_min_freq = min_min_freq_comb
+                    min_ratio_threshold_bytes = min_ratio_threshold_bytes_comb
+                    min_ratio_threshold_fr = min_ratio_threshold_fr_comb
+
+                    # Décrémenter les seuils
+                    min_freq_decrement = min_freq_decrement_comb
+                    ratio_threshold_decrement = ratio_threshold_decrement_comb
+
+                    freq_decrement_per_dimension = freq_decrement_per_dimension_comb
+                    ratio_decrement_per_dimension = ratio_decrement_per_dimension_comb
+
+                    # Dimensions des n-grammes à considérer
+                    dimensions = dimensions_comb
+
+                    # Utilisation de frequence_matrixes au lieu de frequence_matrixes_combinations
+                    matrices_bytes = matrices_bytes_comb
+                    matrices_fr = matrices_fr_comb
+
+
+                    swap_threshold_current_index += 1
+            else:
+                # Ajuster les seuils globaux
+                current_min_freq = max(current_min_freq - min_freq_decrement, min_min_freq)
+                current_ratio_threshold_bytes = max(
+                    current_ratio_threshold_bytes - ratio_threshold_decrement, min_ratio_threshold_bytes
+                )
+                current_ratio_threshold_fr = max(
+                    current_ratio_threshold_fr - ratio_threshold_decrement, min_ratio_threshold_fr
+                )
+                """ print(
+                    f"Ajustement des seuils globaux: min_freq={current_min_freq}, "
+                    f"ratio_threshold_bytes={current_ratio_threshold_bytes}, "
+                    f"ratio_threshold_fr={current_ratio_threshold_fr}"
+                ) """
+
+    # -------------------------------- FINITION DU DÉCODAGE ------------------------------------
+    # 1- Lance l'algorithme et regarde les print de la fonction verifier_substitution
+    #       Tu verras qu'elle trouve parfois les bonnes substitutions avant notre algorithme principal en complétant les mots directement.
+    #       Cependant elle ne choisit pas la substitution, elle fait seulement rejeter d'autres substitutions incorrectes.
+    #       On va modifier la fonction pour qu'elle puisse choisir la substitution si elle est certaine. Je te laisse réfléchir à comment l'implémenter.
+    # 2- Une fois l'itération avec les seuils terminée (parce qu'elle n'a pas trouvé de substitution à une certaine itération)
+    #       - On itère sur les mots formés dans notre texte.
     #           - On commencerait par des mots de 2 bytes, puis 3, etc.
     #       - Si le mot n'est pas dans la langue française, on regarde si l'ajout ou la modification d'un byte peut former un mot français.
     #       - Si oui, modifier le byte et vérifier si le texte est plus lisible.
     #       - Voir le google doc, on avait déjà parlé de ça.
-    #
-    # 4- Autres idées...? Tester l'accuracy après les 3 premières idées. On verra si on a le temps de faire mieux.
 
 
 
@@ -1325,10 +1502,95 @@ def decrypt(encoded_text, cle_secrete):
             decoded_text += key[byte].replace('&', '\n').replace('@', '\r').replace('<', '\ufeff')
         else:
             decoded_text += '~'
-    with open("decoded_text.txt", "w") as f:
+    with open("decoded_text.txt", "w", encoding="utf-8") as f:
         f.write(decoded_text)
     return
 
+def verify_substitution_in_text(byte, char, key, text):
+    '''
+    Cette fonction trouve des mots de 1 à 8 bytes qui contiennent le byte donné et
+    vérifie si substituer le byte par le char bénificie au texte.
+    '''
+    known_chars = set()
+    for curr_char in key:
+        if curr_char is not None:
+            known_chars.add(curr_char)
+
+    unknown_chars = set()
+    all_chars = text_to_symbols(text)
+    for curr_char in all_chars:
+        if not curr_char in known_chars:
+            unknown_chars.add(curr_char)
+
+    # On enlève de unknown_chars tous les caractères qui ne sont pas possibles dans les mots français
+    global possible_chars_in_word
+    unknown_chars = set(curr_char for curr_char in unknown_chars if curr_char in possible_chars_in_word)
+
+    substitution_score = 0
+    
+    # Trouver tous les groupes de mots de 1 à 8 bytes qui contiennent le byte donné et dont seulement le byte donné est inconnu.
+    groups = capture_groups(start_str='[^ ]? [^ ]?', n_bytes_min=1, n_bytes_max=8, end_str='[^ ]? [^ ]?', encoded_bytes=text, key=key, include_start_and_end=True)
+    for group in groups:
+        # Vérifier si le byte donné est dans le groupe
+        if byte in group:
+            start = None
+            end = None
+            if isinstance(group[0], str):
+                start = group[0]
+            if isinstance(group[-1], str):
+                end = group[-1]
+            group = [b for b in group if isinstance(b, int)]
+            # Tous les autres bytes du groupe devraient avoir une substitution connue dans la clé
+            if not all(key[b] is not None for b in group if b != byte):
+                continue
+
+            # Si le groupe est un mot français, aucun problème
+            if verifier_substitution(group, byte, char, start, end):
+                substitution_score += 1
+                continue
+            # Si le groupe n'est pas un mot français, on doit vérifier s'il y avait un mot français possible avant la substitution.
+            # On doit donc vérifier si le groupe est un mot français si on remplace le byte par n'importe quel char de unknown_chars
+            char_substitution = verifier_substitutions_possibles(group, byte, possible_chars_in_word, start, end)
+            if char_substitution is not None:
+                # Il y avait une substitution possible qui formait un mot français, et maintenant il n'y en a plus.
+                # La substitution n'est donc pas fiable.
+                key[byte] = char
+                print("Substitution non fiable de '" + char + "' dans '" + start + ''.join(key[byte] for byte in group) + end + "' car substitution par '" + char_substitution + "' était possible.")
+                key[byte] = None
+                substitution_score -= 1
+            
+    # Aucun problème trouvé, la substitution semble fiable.
+    return substitution_score >= 0
+
+def verifier_substitution(mot_bytes, byte_a_substituer, caractere_remplacement, start, end):
+    """
+    Vérifie si la substitution du byte spécifié par un caractère donné
+    donne un mot valide selon le dictionnaire.
+    """
+    # Construire le mot en remplaçant le byte
+    mot = "".join(
+        key[byte] if byte != byte_a_substituer else caractere_remplacement
+        for byte in mot_bytes
+    )
+    mot = start + mot + end
+    mot_espace_1 = mot.index(' ')+1
+    mot = mot[mot_espace_1:mot.index(' ', mot_espace_1)]
+    # Vérifie si le mot construit est dans le dictionnaire
+    if mot in fr_dict:
+        print("Mot trouvé: " + mot)
+        return True
+    return False
+
+def verifier_substitutions_possibles(mot_bytes, byte_a_substituer, caracteres_possibles, start, end):
+    """
+    Vérifie si la substitution du byte spécifié par un des caractères
+    possibles donne un mot du dictionnaire.
+    """
+    for caractere in caracteres_possibles:
+        if verifier_substitution(mot_bytes, byte_a_substituer, caractere, start, end):
+            # Retourne le premier caractère valide trouvé
+            return caractere
+    return None
 
 if __name__ == '__main__':
     for i in range(1):
