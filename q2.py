@@ -767,149 +767,148 @@ def decrypt(encoded_text, cle_secrete, test_number):
     key = [None] * 256
     # ______________ 1. Trouver la substitution "e " et "s " ___________
 
-    # Première remarque: parfois dans le texte on tombe sur une page des matières, où il y a énormément de " " consécutifs pour de la mise en page.
-    # On va lire les bytes encodés et cibler tous les bytes qui sont répétés 4+ fois consécutivement. Le byte le plus fréquent est l'espace.
-    # Il est aussi très possible qu'on ne trouve aucun byte répété 4+ fois si on n'est pas sur une table des matières.
-    groups_3_consecutive = []
+    # Parmi toutes les paires de substitution du top 10 plus fréquents bytes, on doit trouver quel est le "e " et quel est le "s "
+    best_pair = (None, None)
+    max_groups_pair = 0
+    # On suppose que
+    for indice_e in range(0, 8):
+        for indice_s in range(indice_e, 8):
+            if indice_e == indice_s:
+                continue
+            
+            # Supposons qu'on a trouvé la bonne paire de "e " et "s "
+            key[sorted_bytes[indice_e]] = 'e '
+
+            # On veut faire ça:
+            key[sorted_bytes[indice_s]] = 's '
+
+            # On vérifie si la substitution est valide
+            if validate_space_substitution(sorted_bytes[indice_e], 'e ', key, encoded_bytes) > 0.001 or validate_space_substitution(sorted_bytes[indice_s], 's ', key, encoded_bytes) > 0.001:
+                """ # Vérifier si on fait une erreur avec la clé secrète
+                if (secret_key_byte_to_char[sorted_bytes[indice_e]] == 'e ' or secret_key_byte_to_char[sorted_bytes[indice_e]] == 's ') and (secret_key_byte_to_char[sorted_bytes[indice_s]] == 's ' or secret_key_byte_to_char[sorted_bytes[indice_s]] == 'e '):
+                    print("ERREUR: ON A REJETTÉ LA CLÉ AVEC TAUX D'ERREUR 0.001") """
+
+                # La substitution n'est pas valide
+                #print("Substitution invalide pour 'e ' et 's '", secret_key_byte_to_char[sorted_bytes[indice_e]], secret_key_byte_to_char[sorted_bytes[indice_s]])
+                key[sorted_bytes[indice_e]] = None
+                key[sorted_bytes[indice_s]] = None
+                continue
+
+            # On forme des groupes de mots de forme "e " + BYTE + "e " et des groupes de "s " + BYTE + "s "
+            # L'objectif est que les groupes de forme "e " + BYTE + "e " ont moins de BYTE possibles
+            # et que les groupes de forme "s " + BYTE + "s " ont beaucoup de BYTE possibles
+            groups_e = capture_groups(start_str='e ', n_bytes_min=1, n_bytes_max=1, end_str='e ', encoded_bytes=encoded_bytes, key=key)
+            groups_s = capture_groups(start_str='s ', n_bytes_min=1, n_bytes_max=1, end_str='s ', encoded_bytes=encoded_bytes, key=key)
+
+            # On vérifie que la taille des groupes est >= 5:
+            # Si non, ça veut dire que le groupe associé est en réalité "\r\n",
+            #   car il ne devrait pas (ou très peu) y avoir 2 sauts de ligne consécutifs séparés d'un seul byte dans le texte.
+            #print("Nombre de groupes de 'e ' trouvés: ", len(groups_e))
+            #print("Nombre de groupes de 's ' trouvés: ", len(groups_s))
+            
+            # On semble avoir trouvé une bonne paire candidate pour "e " et "s "
+            #print("Paire candidate pour 'e ' et 's ' trouvée: '" + secret_key_byte_to_char[sorted_bytes[indice_e]] + "' et '" + secret_key_byte_to_char[sorted_bytes[indice_s]] + "'")
+            # On calcule les fréquences de chaque byte dans les groupes de "e "
+            
+            #print("Groups_e:")
+            # Créer un set avec tous les bytes dans groups_e:
+            all_bytes_e = []
+            for group in groups_e:
+                for byte in group:
+                    if byte not in all_bytes_e:
+                        #print(secret_key_byte_to_char[byte], end=" ")
+                        all_bytes_e.append(byte)
+
+
+            #print("\nGroups_s:")
+            # Créer un set avec tous les bytes dans groups_s:
+            all_bytes_s = []
+            for group in groups_s:
+                for byte in group:
+                    if byte not in all_bytes_s:
+                        #print(secret_key_byte_to_char[byte], end=" ")
+                        all_bytes_s.append(byte)
+
+            # On sait qu'il y a au moins 1 byte différents dans les groupes de "e ", car "que" est un mot commun.
+            if len(all_bytes_e) < 1 or len(all_bytes_s) < 1:
+                """ # Vérifier si on fait une erreur avec la clé secrète
+                if (secret_key_byte_to_char[sorted_bytes[indice_e]] == 'e ' or secret_key_byte_to_char[sorted_bytes[indice_e]] == 's ') and (secret_key_byte_to_char[sorted_bytes[indice_s]] == 's ' or secret_key_byte_to_char[sorted_bytes[indice_s]] == 'e '):
+                    print("ERREUR: ON A REJETTÉ LA CLÉ AVEC LEN < 1") """
+                key[sorted_bytes[indice_e]] = None
+                key[sorted_bytes[indice_s]] = None
+                continue
+            # On sait qu'il y a au moins 3 bytes différents dans les groupes de "s "
+            # Ex.: "les", "des", "ses", "tes", "mes", "nos", "vos"...
+            if len(all_bytes_e) < 3 and len(all_bytes_s) < 4:
+                """ # Vérifier si on fait une erreur avec la clé secrète
+                if (secret_key_byte_to_char[sorted_bytes[indice_e]] == 'e ' or secret_key_byte_to_char[sorted_bytes[indice_e]] == 's ') and (secret_key_byte_to_char[sorted_bytes[indice_s]] == 's ' or secret_key_byte_to_char[sorted_bytes[indice_s]] == 'e '):
+                    print("ERREUR: ON A REJETTÉ LA CLÉ AVEC LEN < 4") """
+                key[sorted_bytes[indice_e]] = None
+                key[sorted_bytes[indice_s]] = None
+                continue
+
+            # On a trouvé une bonne paire de "e " et "s "
+            """ print("Nombre de bytes différents dans les groupes de 'e ': ", len(all_bytes_e))
+            print("Nombre de bytes différents dans les groupes de 's ': ", len(all_bytes_s))
+            print() """
+
+            # Le groupe avec le plus de bytes différents est "s "
+            # Appliquer l'échange si on s'est trompé dans l'assignation
+            if len(all_bytes_e) > len(all_bytes_s):
+                indice_e, indice_s = indice_s, indice_e
+
+            # Dernier critère pour ne pas effectuer une fausse substitution: On remarque que la somme des longueurs des groupes de "e " et "s " est maximale
+            if (len(groups_e) + len(groups_s)) > max_groups_pair:
+                #print("Nouvelle meilleure paire (e, s) trouvée: '" + secret_key_byte_to_char[sorted_bytes[indice_e]] + "' et '" + secret_key_byte_to_char[sorted_bytes[indice_s]] + "'")
+                #print(len(groups_e), len(groups_s))
+                max_groups_pair = len(groups_e) + len(groups_s)
+                best_pair = (indice_e, indice_s)
+            else:
+                # Vérifier si on fait une erreur avec la clé secrète
+                if (secret_key_byte_to_char[sorted_bytes[indice_e]] == 'e ' or secret_key_byte_to_char[sorted_bytes[indice_e]] == 's ') and (secret_key_byte_to_char[sorted_bytes[indice_s]] == 's ' or secret_key_byte_to_char[sorted_bytes[indice_s]] == 'e '):
+                    print("ERREUR: ON A REJETTÉ LA CLÉ AVEC LEN > MAX")
+            key[sorted_bytes[indice_s]] = None
+            key[sorted_bytes[indice_e]] = None
+    
+    indice_e, indice_s = best_pair
+    try:
+        key[sorted_bytes[indice_e]] = 'e '
+        key[sorted_bytes[indice_s]] = 's '
+    except:
+        # Notre algorithme a échoué à trouver une bonne paire de "e " et "s "
+        # On assume que les 1er et 2e byte les plus probables sont "e " et "s "
+        key[sorted_bytes[0]] = 'e '
+        key[sorted_bytes[1]] = 's ' 
+        print("FAILED TO LOCATE E AND S")
+        """ # Print les 10 autres bytes les plus probables ainsi que la clé secrète pour déboggage
+        print("10 bytes les plus probables: clé-dictionnaire vs clé secrète")
+        for i in range(0,10):
+            print("Char : '" + sorted_chars[i] + "' =  char '" + secret_key_byte_to_char[sorted_bytes[i]] +"', Obs = " + str(byte_probabilities[sorted_bytes[i]]) + " | Théorique = " + str(char_probabilities[sorted_chars[i]])) """
+
+
+    # On va ensuite créer un set avec tous les bytes qui se répètent plus de 3 fois d'affilée dans le texte.
+    # Cela va capturer les bytes du genre "..." ou "   " qui sont des espaces répétées pour formattage.
+    # On va pouvoir utiliser cette information plus tard pour ne pas confondre les bytes alphanumériques avec des espaces ou points ou \r\n
+    consecutive_3_bytes = set()
     for i in range(len(encoded_bytes)):
         group = [encoded_bytes[i]]
         while i < len(encoded_bytes) - 1 and encoded_bytes[i] == encoded_bytes[i + 1]:
             i+=1
             group.append(encoded_bytes[i])
         if len(group) >= 3:
-            groups_3_consecutive.append(group)
+            consecutive_3_bytes.add(group[0])
+
+
+
+    """ print("Étape 1: Substitution de '" + str(sorted_bytes[indice_e]) + "' par 'e ', Obs = " + str(byte_probabilities[sorted_bytes[indice_e]]) + " | Théorique = " + str(char_probabilities['e ']))
+    print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_bytes[indice_e]] + "'")
+    print("Étape 1: Substitution de '" + str(sorted_bytes[indice_s]) + "' par 's ', Obs = " + str(byte_probabilities[sorted_bytes[indice_s]]) + " | Théorique = " + str(char_probabilities['s ']))
+    print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_bytes[indice_s]] + "'") """
+
     
-    # On veut savoir combien de groupes de 10+ consécutifs il y a pour chaque byte
-    byte_to_10_consecutive_frequency = {}
-    # On veut savoir le maximum de bytes consécutifs pour chaque byte
-    byte_to_max_consecutive_len = {}
-    for group in groups_3_consecutive:
-        byte = group[0]
-        if byte not in byte_to_max_consecutive_len or byte_to_max_consecutive_len[byte] < len(group):
-            byte_to_max_consecutive_len[byte] = len(group)
-        if byte not in byte_to_10_consecutive_frequency and len(group) >= 10:
-            byte_to_10_consecutive_frequency[byte] = 1
-        elif len(group)>=10:
-            byte_to_10_consecutive_frequency[byte] += 1
-    
-    # On trouve le byte avec le plus de bytes consécutifs
-    max_len = 0
-    max_byte = -1
-    for byte, length in byte_to_max_consecutive_len.items():
-        if length > max_len:
-            max_len = length
-            max_byte = byte
 
-    # On prend la liste des 3 bytes les plus fréquents dans byte_to_max_consecutive_len
-    sorted_max_consecutive_len_bytes = sorted(byte_to_max_consecutive_len, key=byte_to_max_consecutive_len.get, reverse=True)
-    # On prend les 3 bytes les plus fréquents
-    top_3_bytes = sorted_max_consecutive_len_bytes[:3]
-    
-    # On suppose que si max_len > 10, que le byte en question est dans le top 3 bytes avec le plus de répétitions, 
-    # et qu'il apparaît au moins 3 fois dans le texte avec un groupe de 10+ consécutif, c'est un espace
-    if max_len > 10 and max_byte in top_3_bytes and byte_to_10_consecutive_frequency[max_byte] > 3:
-        key[max_byte] = ' '
+    verif_key(key, secret_key_byte_to_char)
 
-
-    # 1- On suppose que les 2 bytes les plus probables sont "e " et "s ".
-    # Il est possible que "\r\n" soit premier ou 2e, on va traiter ce cas particulier aussi.
-    #   Note: "\r\n" est transformé en "&@" pour éviter les problèmes de lecture
-
-    # On doit trouver lequel est "e " et lequel est "s "
-    # On va supposer que le premier est "e ", et le 2e est "s ".
-    if key[sorted_bytes[0]] == ' ':
-        e_index = 1
-        s_index = 2
-    elif key[sorted_bytes[1]] == ' ':
-        e_index = 0
-        s_index = 2
-    else:
-        e_index = 0
-        s_index = 1
-        
-    key[sorted_bytes[e_index]] = 'e '
-    key[sorted_bytes[s_index]] = 's '
-
-    # On forme des groupes de mots de forme "e " + BYTE + "e " et des groupes de "s " + BYTE + "s "
-    # L'objectif est que les groupes de forme "e " + BYTE + "e " ont moins de BYTE possibles
-    # et que les groupes de forme "s " + BYTE + "s " ont beaucoup de BYTE possibles
-    groups_e = capture_groups(start_str='e ', n_bytes_min=1, n_bytes_max=1, end_str='e ', encoded_bytes=encoded_bytes, key=key)
-    groups_s = capture_groups(start_str='s ', n_bytes_min=1, n_bytes_max=1, end_str='s ', encoded_bytes=encoded_bytes, key=key)
-
-    # On vérifie que la taille des groupes est >= 5:
-    # Si non, ça veut dire que le groupe associé est en réalité "\r\n",
-    #   car il ne devrait pas (ou très peu) y avoir 2 sauts de ligne consécutifs séparés d'un seul byte dans le texte.
-    if len(groups_e) < 5:
-        # Le 'e ' choisi est en réalité \n\r
-        key[sorted_bytes[e_index]] = '&@'
-        e_index += 1
-        if key[sorted_bytes[e_index]] == ' ': # Prendre en compte le cas de l'espace déjà assigné
-            e_index += 1
-        key[sorted_bytes[e_index]] = 'e '
-
-        s_index += 1
-        if key[sorted_bytes[s_index]] == ' ': # Prendre en compte le cas de l'espace déjà assigné
-            s_index += 1
-        key[sorted_bytes[s_index]] = 's '
-        #print("Étape 1: Substitution de '" + str(sorted_bytes[0]) + "' par '&@', Obs = " + str(byte_probabilities[sorted_bytes[0]]) + " | Théorique = " + str(char_probabilities['&@']))
-        #print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_bytes[1]] + "'")
-        groups_e = capture_groups(start_str='e ', n_bytes_min=1, n_bytes_max=1, end_str='e ', encoded_bytes=encoded_bytes, key=key)
-        groups_s = capture_groups(start_str='s ', n_bytes_min=1, n_bytes_max=1, end_str='s ', encoded_bytes=encoded_bytes, key=key)
-    elif len(groups_s) < 5:
-        # Le \n\r est le 2e caractère le plus fréquent de notre texte.
-        key[sorted_bytes[e_index]] = 'e '
-        key[sorted_bytes[s_index]] = '&@'
-        s_index += 1
-        if key[sorted_bytes[s_index]] == ' ': # Prendre en compte le cas de l'espace déjà assigné
-            s_index += 1
-        key[sorted_bytes[s_index]] = 's '
-        #print("Étape 1: Substitution de '" + str(sorted_bytes[1]) + "' par '&@', Obs = " + str(byte_probabilities[sorted_bytes[1]]) + " | Théorique = " + str(char_probabilities['&@']))
-        #print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_bytes[1]] + "'")
-        groups_e = capture_groups(start_str='e ', n_bytes_min=1, n_bytes_max=1, end_str='e ', encoded_bytes=encoded_bytes, key=key)
-        groups_s = capture_groups(start_str='s ', n_bytes_min=1, n_bytes_max=1, end_str='s ', encoded_bytes=encoded_bytes, key=key)
-    
-    # Maintenant qu'on a traité le cas particulier où "\r\n" est premier ou 2e, on peut continuer en discernant "e " et "s "
-    # On calcule les fréquences de chaque byte dans les groupes de "e "
-    
-    #print("Groups_e:")
-    # Créer un set avec tous les bytes dans groups_e:
-    all_bytes_e = []
-    for group in groups_e:
-        for byte in group:
-            if byte not in all_bytes_e:
-                #print(secret_key_byte_to_char[byte], end=" ")
-                all_bytes_e.append(byte)
-
-
-    #print("\nGroups_s:")
-    # Créer un set avec tous les bytes dans groups_s:
-    all_bytes_s = []
-    for group in groups_s:
-        for byte in group:
-            if byte not in all_bytes_s:
-                #print(secret_key_byte_to_char[byte], end=" ")
-                all_bytes_s.append(byte)
-
-    #print("Nombre de bytes différents dans les groupes de 'e ': ", len(all_bytes_e))
-    #print("Nombre de bytes différents dans les groupes de 's ': ", len(all_bytes_s))
-
-    # Le groupe avec le plus de bytes différents est "s "
-    # Appliquer l'échange si on s'est trompé dans l'assignation
-    if len(all_bytes_e) > len(all_bytes_s):
-        key[sorted_bytes[e_index]] = 's '
-        key[sorted_bytes[s_index]] = 'e '
-        
-
-    #print("Étape 1: Substitution de '" + str(sorted_bytes[e_index]) + "' par 'e ', Obs = " + str(byte_probabilities[sorted_bytes[e_index]]) + " | Théorique = " + str(char_probabilities['e ']))
-    #print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_bytes[e_index]] + "'")
-    #print("Étape 1: Substitution de '" + str(sorted_bytes[s_index]) + "' par 's ', Obs = " + str(byte_probabilities[sorted_bytes[s_index]]) + " | Théorique = " + str(char_probabilities['s ']))
-    #print("Validation avec la clé secrète: '" + secret_key_byte_to_char[sorted_bytes[s_index]] + "'")
-
-    """ # Print les 10 autres bytes les plus probables ainsi que la clé secrète pour déboggage
-    print("10 bytes les plus probables: clé-dictionnaire vs clé secrète")
-    for i in range(0,10):
-        print("Char : '" + sorted_chars[i] + "' =  char '" + secret_key_byte_to_char[sorted_bytes[i]] +"', Obs = " + str(byte_probabilities[sorted_bytes[i]]) + " | Théorique = " + str(char_probabilities[sorted_chars[i]]))
-    """
 
     # ------------------------- TOUS LES BYTES QUI SUIVENT 'e ' -------------------------
 
@@ -1097,8 +1096,6 @@ def decrypt(encoded_text, cle_secrete, test_number):
                 group_str += secret_key_byte_to_char[byte]
         # print("Mot '" + group_str + "'")
 
-    verif_key(key, secret_key_byte_to_char)
-
     # ---------------------- 4. Substitution automatique des bytes ----------------------
     # 1- Encoder un texte en français qui servira de données théoriques pour les fréquences des caractères.
     # fr_text: Texte en français encodé en bytes
@@ -1151,7 +1148,7 @@ def decrypt(encoded_text, cle_secrete, test_number):
     bytes_connus_autre_encodage = sorted(bytes_connus_autre_encodage)
 
     # Fonction pour performer les substitutions
-    def perform_substitution(matrice_bytes, matrice_fr, dimension, min_freq, ratio_threshold_bytes, ratio_threshold_fr, char_probabilities, byte_probabilities, excluded_substitutions, exclude_substitutions, exclude_rare_chars, encoded_bytes):
+    def perform_substitution(matrice_bytes, matrice_fr, dimension, min_freq, ratio_threshold_bytes, ratio_threshold_fr, char_probabilities, byte_probabilities, excluded_substitutions, exclude_substitutions, exclude_rare_chars, consecutive_3_bytes ,encoded_bytes):
 
         for (context, freqs_bytes) in matrice_bytes.items():
             # Vérifie si le contexte consiste en des bytes connus
@@ -1192,7 +1189,7 @@ def decrypt(encoded_text, cle_secrete, test_number):
 
             # Au début de l'algorithme, on ne veut pas s'aventurer dans des substitutions trop risquées (majuscules, apostrophes, caractères étranges, etc.)
             if exclude_rare_chars:
-                if not re.match(r'[^éwàâô’jkzA-Zx!?»\\(\\)\\-\\;\\—]+', fr_byte_to_char[max1_fr_index]):
+                if not re.match(r'[^\\*yéwàâô’jkzA-Zx!?»\\(\\);\\—-]+', fr_byte_to_char[max1_fr_index]):
                     continue
 
             # Obtenir les probabilités des 2 bytes les plus fréquents
@@ -1227,6 +1224,13 @@ def decrypt(encoded_text, cle_secrete, test_number):
                         #print("Substitution bloquée: " + secret_key_byte_to_char[max1_index] + " ou " + secret_key_byte_to_char[max2_index] + " -> " + fr_byte_to_char[max1_fr_index] + " ou " + fr_byte_to_char[max2_fr_index])
                         continue
 
+                    # Si le byte qu'on remplace apparaît 3 fois de suite dans notre texte, on sait que la bonne substitution doit être du formattage (espace, point, etc.)
+                    if max1_index in consecutive_3_bytes:
+                        if fr_byte_to_char[max1_fr_index] not in [" ", "&@", "."]:
+                            print("Substitution bloquée (3 consécutifs): '" + secret_key_byte_to_char[max1_index] + "' -> '" + fr_byte_to_char[max1_fr_index] + "'")
+                            excluded_substitutions[max1_index][max1_fr_index] = True
+                            continue
+
                     # On fait une dernière vérification (très coûteuse) pour savoir si cette substitution est fiable.
                     if exclude_substitutions:
                         # substitution_accepted si une substitution acceptée a été trouvée. replacement est un char autre que celui proposé si une meilleure substitution a été trouvée
@@ -1243,7 +1247,6 @@ def decrypt(encoded_text, cle_secrete, test_number):
                                     # Noter qu'on a trouvé une meilleure substitution dans le fichier "decoding_" + str(test_number) + ".txt"
                                     with open("decoding_" + str(test_number) + ".txt", "a", encoding="utf-8") as f:
                                         f.write(f"'{fr_byte_to_char[max1_fr_index]}' replaced by '{replacement}' = '{secret_key_byte_to_char[max1_index]}' with dimension '{str(dimension)}'\n")
-                                        f.write(f"min_freq={min_freq}, ratio_threshold_bytes={ratio_threshold_bytes}, ratio_threshold_fr={ratio_threshold_fr}\n")
                                     return
                             # La substitution est moins bonne que prévue. On ne la prend pas.
                             else:
@@ -1260,7 +1263,7 @@ def decrypt(encoded_text, cle_secrete, test_number):
                         # On ne veut absolument pas se tromper là-dessus, parce que les espaces délimitent les mots.
                         if ' ' in fr_byte_to_char[max1_fr_index]:
                             error_frequency = validate_space_substitution(max1_index, fr_byte_to_char[max1_fr_index], key, encoded_bytes)
-                            if error_frequency > 0.04:
+                            if error_frequency > 0.06:
                                 print("Substitution de byte avec espace '" + fr_byte_to_char[max1_fr_index] + "' = '" + secret_key_byte_to_char[max1_index] + "' bloquée par fréquence d'erreur de " + str(error_frequency))
                                 excluded_substitutions[max1_index][max1_fr_index] = True
                                 continue
@@ -1274,7 +1277,6 @@ def decrypt(encoded_text, cle_secrete, test_number):
                     # Append ce texte à un fichier "decoding_" + str(test_number) + ".txt" pour vérification
                     with open("decoding_" + str(test_number) + ".txt", "a", encoding="utf-8") as f:
                         f.write(f"'{fr_byte_to_char[max1_fr_index]}' = '{secret_key_byte_to_char[max1_index]}' with dimension '{str(dimension)}'\n")
-                        f.write(f"min_freq={min_freq}, ratio_threshold_bytes={ratio_threshold_bytes}, ratio_threshold_fr={ratio_threshold_fr}\n")
                     return
         return
 
@@ -1288,17 +1290,17 @@ def decrypt(encoded_text, cle_secrete, test_number):
     initial_ratio_threshold_bytes_comb = 1.9
     initial_ratio_threshold_fr_comb = 1.9
 
-    min_min_freq_comb = 12
-    min_ratio_threshold_bytes_comb = 1.35
-    min_ratio_threshold_fr_comb = 1.35
+    min_min_freq_comb = 10
+    min_ratio_threshold_bytes_comb = 1.3
+    min_ratio_threshold_fr_comb = 1.3
 
 
     # Décrémenter les seuils
-    min_freq_decrement_comb = 0.5
+    min_freq_decrement_comb = 1
     ratio_threshold_decrement_comb = 0.1
 
     freq_decrement_per_dimension_comb = 1
-    ratio_decrement_per_dimension_comb = 0.1
+    ratio_decrement_per_dimension_comb = 0.05
 
     # Dimensions des n-grammes à considérer
     dimensions_comb = [1, 2]
@@ -1312,7 +1314,7 @@ def decrypt(encoded_text, cle_secrete, test_number):
 
     # --------------------- PARAMÈTRES GÉNÉRAUX -------------------------------
     # Nombre minimum de bytes connus désirés
-    desired_minimum_known_bytes = len(byte_probabilities)
+    desired_minimum_known_bytes = 150#len(byte_probabilities)
 
     # Après combien de substitutions de combinaisons on passe aux fréquences, et vice-versa
     # On veut diminuer le nombre de substitutions consécutives par la même approche pour éviter le plus possible les erreurs
@@ -1365,7 +1367,7 @@ def decrypt(encoded_text, cle_secrete, test_number):
     excluded_substitutions = [[False for _ in range(256)] for _ in range(256)]
 
     # Ce paramètre permet de réinitialiser un certain nombre de fois fois les substitutions bloquées avant de terminer l'algorithme si jamais on n'a pas trouvé assez de symboles.
-    reset_excluded_substitutions = 1
+    reset_excluded_substitutions = 0
 
 
     # À partir de combien de substitutions on fait la longue vérification de si la substitution est fiable
@@ -1374,7 +1376,7 @@ def decrypt(encoded_text, cle_secrete, test_number):
 
     # À partir de combien de substitutions on accepte de substituter des caractères "rares" (=risqués) comme les majuscules, apostrophes, etc.
     # On ne peut pas trop monter cette limite sinon notre algorithme commence à faire des erreurs!
-    exclude_rare_chars_until = 90
+    exclude_rare_chars_until = 60
     exclude_rare_chars = True
 
     
@@ -1454,6 +1456,7 @@ def decrypt(encoded_text, cle_secrete, test_number):
                                     excluded_substitutions,
                                     exclude_substitutions,
                                     exclude_rare_chars,
+                                    consecutive_3_bytes,
                                     encoded_bytes
                                 )
                 substitutions_after = len(bytes_connus)
@@ -1557,9 +1560,12 @@ def verify_substitution_in_text(byte, char, key, text):
     
     # Trouver tous les groupes de mots de 1 à 8 bytes qui contiennent le byte donné et dont seulement le byte donné est inconnu.
     groups = capture_groups(start_str='[^ ]? [^ ]?', n_bytes_min=1, n_bytes_max=8, end_str='[^ ]? [^ ]?', encoded_bytes=text, key=key, include_start_and_end=True)
+    no_of_words_found = 0
+    no_of_occurences = 0
     for group in groups:
         # Vérifier si le byte donné est dans le groupe
         if byte in group:
+            no_of_occurences += 1
             start = None
             end = None
             if isinstance(group[0], str):
@@ -1573,24 +1579,26 @@ def verify_substitution_in_text(byte, char, key, text):
 
             # Si le groupe est un mot français, aucun problème
             if verifier_substitution(group, byte, char, start, end):
-                substitution_score += len(group)//2
+                no_of_words_found += 1
+                substitution_score += 1
                 continue
             # Si le groupe n'est pas un mot français, on doit vérifier s'il y avait un mot français possible avant la substitution.
             # On doit donc vérifier si le groupe est un mot français si on remplace le byte par n'importe quel char de unknown_chars
-            char_substitutions = verifier_substitutions_possibles(group, byte, unknown_chars, start, end, other_substitutions_possible)
+            char_substitutions = verifier_substitutions_possibles(group, byte, unknown_chars, start, end)
             if char_substitutions is not None:
+                no_of_words_found += 1
                 # Il y avait une substitution possible qui formait un mot français, et maintenant il n'y en a plus.
                 # La substitution n'est donc pas fiable.
                 key[byte] = "~"
                 print("Substitution non fiable de '" + char + "' dans '" + start + "|" +''.join(key[byte] for byte in group) + "|" + end + "' car substitution par '" + next(iter(char_substitutions)) + "' était possible.")
                 key[byte] = None
-                substitution_score -= len(group)
-                # Enlever les substitutions qui ne sont plus possibles si le groupe a une longueur de 3 bytes et plus
-                if len(group) >= 3 or len(char_substitutions) < 3:
+                substitution_score -= 1
+                # Enlever les substitutions qui ne sont plus possibles si le groupe a une longueur de 2 bytes et plus
+                if len(group) >= 2:
                     other_substitutions_possible.intersection_update(char_substitutions)
             
     # On a trouvé d'autres substitutions qui semblent meilleures
-    if substitution_score<0:
+    if substitution_score<0 and no_of_words_found >= 5:
         # S'il y a seulement une substitution possible, on la prend
         if len(other_substitutions_possible)==1:
             char = other_substitutions_possible.pop()
@@ -1669,7 +1677,7 @@ def verifier_substitution(mot_bytes, byte_a_substituer, caractere_remplacement, 
             return True
         return False
 
-def verifier_substitutions_possibles(mot_bytes, byte_a_substituer, caracteres_possibles, start, end, other_possible_substitutions):
+def verifier_substitutions_possibles(mot_bytes, byte_a_substituer, caracteres_possibles, start, end):
     """
     Vérifie si la substitution du byte spécifié par un des caractères
     possibles donne un mot du dictionnaire.
@@ -1692,9 +1700,13 @@ def verifier_substitutions_possibles(mot_bytes, byte_a_substituer, caracteres_po
 def validate_space_substitution(byte, space_substitution, key, encoded_bytes):
     global fr_dict
     space_bytes = set()
+
+    key = key[:]
     for i in range(len(key)):
         if key[i] is not None and ' ' in key[i]:
             space_bytes.add(i)
+    key[byte] = space_substitution
+    space_bytes.add(byte)
 
     no_of_errors = 0
     # Trouver les bytes adjacents à byte qui contiennent un espace
@@ -1758,7 +1770,7 @@ def validate_space_substitution(byte, space_substitution, key, encoded_bytes):
 
 
 if __name__ == '__main__':
-    for i in range(1,11):
+    for i in range(4,8):
         print("Test #", i)
         main(i)
         print()
